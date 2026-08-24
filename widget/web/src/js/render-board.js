@@ -49,7 +49,7 @@ function renderBoard(){
       const acts = boardActions(t).map((a) =>
         `<button data-a="${a.s}"${a.primary ? ' class="primary"' : ''}>${a.label}</button>`
       ).join('');
-      return `<div class="bcard${t.status === 'done' ? ' dim' : ''}" data-id="${t.id}">
+      return `<div class="bcard${t.status === 'done' ? ' dim' : ''}" data-id="${t.id}" role="button" tabindex="0">
         <div class="row1"><div class="shape ${shapeClass(t.status)}"></div>${pri}${dueHtml ? `<div class="due">${dueHtml}</div>` : ''}</div>
         <div class="t">${t.title}</div>
         <div class="m">${t.identifier}</div>

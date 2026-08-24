@@ -17,12 +17,12 @@ function renderLarge(){
 
   // 状态计数条（首格「全部」——筛选的唯一复位入口，没有它点入状态后回不到全量列表）
   const map = countsMap();
-  const allCell = `<div class="c${state.filter === 'all' ? ' on' : ''}" data-s="all"><div class="n">${state.tasks.length}</div><div class="l">全部</div></div>`;
+  const allCell = `<div class="c${state.filter === 'all' ? ' on' : ''}" data-s="all" role="button" tabindex="0"><div class="n">${state.tasks.length}</div><div class="l">全部</div></div>`;
   byId('counts').innerHTML = allCell + STATUS_ORDER.map((s) => {
     const n = map[s] || 0;
     const danger = s === 'blocked' ? ' danger' : '';
     const on = state.filter === s ? ' on' : '';
-    return `<div class="c${danger}${on}" data-s="${s}"><div class="n">${n}</div><div class="l">${STATUS_LABEL[s]}</div></div>`;
+    return `<div class="c${danger}${on}" data-s="${s}" role="button" tabindex="0"><div class="n">${n}</div><div class="l">${STATUS_LABEL[s]}</div></div>`;
   }).join('');
 
   // 离线态
@@ -59,7 +59,7 @@ function renderLarge(){
     ).join('');
     const due = shortDate(t.dueDate);
     const dueHtml = due ? ` · <span${isOverdue(t.dueDate) ? ' class="overdue"' : ''}>${due}</span>` : '';
-    return `<div class="item${dim}" data-id="${t.id}">
+    return `<div class="item${dim}" data-id="${t.id}" role="button" tabindex="0">
       <div class="shape ${shapeClass(t.status)}"></div>
       <div class="mid"><div class="t">${t.title}</div><div class="m">${t.identifier}${dueHtml}</div></div>
       ${pri}

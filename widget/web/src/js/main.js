@@ -87,6 +87,14 @@ function bindEvents(){
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && state.largeView === 'detail'){ closeDetail(); }
   });
+  // 键盘可达（P2-3）：div[role=button] 无原生键盘触发，统一补 Enter/Space
+  // （原生 button 自带 Enter/Space，跳过——否则条目内按钮会误触外层条目的 click）
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+    const host = e.target.closest?.('[role="button"]');
+    if (host){ e.preventDefault(); host.click(); }
+  });
   // 新建任务：展开/收起表单；空态区域也可直达（首启引导）
   byId('newBtn').addEventListener('click', () => toggleNewPanel());
   byId('empty').addEventListener('click', () => toggleNewPanel(true));
