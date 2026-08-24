@@ -31,3 +31,4 @@ plans/
 # 本地工具产物（codegraph 索引 / impeccable 评审快照）
 .codegraph/
 .impeccable/
+widget/tests/.out/
