@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "挂件窗口能力：core:default 提供 invoke 自定义 command 与事件监听；页面为内嵌资源，无需 remote 放行",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "allow-load-data",
+    "allow-create-task",
+    "allow-move-task",
+    "allow-issue-detail",
+    "allow-add-comment",
+    "allow-open-full-board",
+    "allow-set-window-size",
+    "allow-close-window"
+  ]
+}

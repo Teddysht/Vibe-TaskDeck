@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dashi-taskboard 挂件</title>
+<!--__STYLES__-->
+</head>
+<body>
+  <!-- ============ 最小胶囊（mini） ============ -->
+  <div class="mini" id="mini" style="display:none">
+    <div class="shape" id="miniShape"></div>
+    <div class="body" id="miniBody">
+      <div class="t" id="miniT">—</div>
+      <div class="meta" id="miniMeta"></div>
+    </div>
+    <div class="pri" id="miniPri" style="display:none"></div>
+    <div class="expand" id="expandBtn" title="展开">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 14l5-5 5 5"/></svg>
+    </div>
+    <div class="dots" id="miniDots"></div>
+  </div>
+
+  <!-- ============ 大挂件（large） ============ -->
+  <div class="large" id="large" style="display:none">
+    <div class="hd">
+      <div class="mark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="5" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
+      </div>
+      <div><div class="tt">任务看板</div><div class="sub" id="projName">—</div></div>
+      <div class="sp"></div>
+      <div class="ic" id="boardBtn" title="全版看板（需 Node + upstream）">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="6" height="16" rx="1.5"/><rect x="10" y="4" width="6" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="13" rx="1.5"/></svg>
+      </div>
+      <div class="ic" id="collapseBtn" title="收起">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg>
+      </div>
+      <div class="ic" id="closeBtn" title="退出挂件">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+      </div>
+    </div>
+    <div class="counts" id="counts"></div>
+    <div class="newpanel" id="newPanel" style="display:none">
+      <input id="npTitle" maxlength="240" placeholder="任务标题（必填）">
+      <div class="nprow">
+        <select id="npStatus"></select>
+        <select id="npPriority"></select>
+        <input type="date" id="npDue" title="截止日期">
+      </div>
+      <div class="nprow">
+        <button class="primary" id="npSubmit">创建</button>
+        <button id="npCancel">取消</button>
+        <span class="nperr" id="npErr"></span>
+      </div>
+    </div>
+    <div class="offline" id="offline"><span class="d"></span>数据层不可用，正在重试…</div>
+    <div class="list" id="list"></div>
+    <div class="empty" id="empty">
+      <div class="ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg></div>
+      <div class="t" id="emptyT">这个状态下还没有任务</div>
+      <div class="s" id="emptyS">点击这里创建第一个任务</div>
+    </div>
+    <div class="ft">
+      <button class="primary" id="newBtn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+        新建任务
+      </button>
+    </div>
+    <!-- ============ 任务详情（L3-本机：详情+评论，覆盖式视图） ============ -->
+    <div class="detail" id="detail" style="display:none">
+      <div class="d-hd">
+        <div class="ic" id="dBack" title="返回列表">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        </div>
+        <div class="d-id" id="dIdent">—</div>
+        <div class="sp"></div>
+        <div class="d-st" id="dStatus">—</div>
+      </div>
+      <div class="d-scroll">
+        <div class="d-title" id="dTitle"></div>
+        <div class="d-meta" id="dMeta"></div>
+        <div class="d-desc" id="dDesc"></div>
+        <div class="d-sec" id="dSec">评论</div>
+        <div class="d-comments" id="dComments"></div>
+        <div class="d-cempty" id="dCEmpty">还没有评论</div>
+      </div>
+      <div class="d-composer">
+        <input id="dcInput" maxlength="2000" placeholder="添加评论…（Enter 发送）">
+        <button class="primary" id="dcSend">发送</button>
+      </div>
+    </div>
+  </div>
+
+<!--__SCRIPTS__-->
+</body>
+</html>
