@@ -2,8 +2,8 @@
  * config —— 常量与通用工具（无依赖，最先加载）
  * ============================================================ */
 
-// 两级窗口尺寸（与 Tauri main.rs 的窗口尺寸保持一致）
-const SIZES = { mini:{w:280,h:48}, large:{w:360,h:520} };
+// 窗口尺寸（mini/large 与 Tauri main.rs 一致；board 为看板布局的横向加宽档）
+const SIZES = { mini:{w:280,h:48}, large:{w:360,h:520}, board:{w:920,h:560} };
 
 // 写操作归属的稳定会话标识由 Rust 数据层固定为 'taskboard-widget'（db.rs）
 

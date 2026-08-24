@@ -29,8 +29,11 @@
       </div>
       <div><div class="tt">任务看板</div><div class="sub" id="projName">—</div></div>
       <div class="sp"></div>
-      <div class="ic" id="boardBtn" title="全版看板（需 Node + upstream）">
+      <div class="ic" id="viewToggle" title="切换看板视图">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="6" height="16" rx="1.5"/><rect x="10" y="4" width="6" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="13" rx="1.5"/></svg>
+      </div>
+      <div class="ic" id="boardBtn" title="打开全版看板（新窗口，需 Node + upstream）">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg>
       </div>
       <div class="ic" id="collapseBtn" title="收起">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5 5 5-5"/></svg>
@@ -60,6 +63,8 @@
       <div class="t" id="emptyT">这个状态下还没有任务</div>
       <div class="s" id="emptyS">点击这里创建第一个任务</div>
     </div>
+    <!-- ============ 看板列视图（与 list 互斥；detail 覆盖层在其上） ============ -->
+    <div class="board" id="board" style="display:none"></div>
     <div class="ft">
       <button class="primary" id="newBtn">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>

@@ -28,6 +28,27 @@ function setSize(w, h){
 // 首次 switchView('mini') 会走完整路径——解除容器隐藏并启动轮转。
 // 若把初始值设回 'mini'，启动调用会被同值守卫早退，两容器保持内联
 // display:none，页面只剩 body 背景（曾导致整窗黑屏，勿回退）。
+// large 内部布局切换：'list'（360×520）↔ 'board'（920×560）
+// detail 覆盖层不属于布局（不动窗口尺寸）；切换只在非 detail 态下发生
+function switchLargeLayout(layout){
+  if (layout === state.largeView || state.largeView === 'detail') return;
+  state.largeView = layout;
+  if (layout === 'board'){
+    byId('list').style.display = 'none';
+    byId('empty').style.display = 'none';
+    byId('counts').style.display = 'none';
+    byId('viewToggle').title = '切换回列表视图';
+    setSize(SIZES.board.w, SIZES.board.h);
+    renderBoard();
+  } else {
+    byId('board').style.display = 'none';
+    byId('counts').style.display = 'flex';
+    byId('viewToggle').title = '切换看板视图';
+    setSize(SIZES.large.w, SIZES.large.h);
+    renderLarge();
+  }
+}
+
 function switchView(view){
   const mini = byId('mini');
   const large = byId('large');
@@ -36,18 +57,20 @@ function switchView(view){
 
   if (view === 'large'){
     // 展开：先显示 large（entering 态）→ 调窗口尺寸 → 下一帧移除 entering 触发过渡
+    // 尺寸/内容按离开时的布局恢复（list 360×520 / board 920×560）
+    const board = state.largeView === 'board';
     large.style.display = 'flex';
     large.classList.add('entering');
     mini.style.display = 'none';
     mini.classList.remove('entering');
-    setSize(SIZES.large.w, SIZES.large.h);
+    setSize(board ? SIZES.board.w : SIZES.large.w, board ? SIZES.board.h : SIZES.large.h);
     stopRotate();
-    renderLarge();
+    if (board){ renderBoard(); } else { renderLarge(); }
     requestAnimationFrame(() => requestAnimationFrame(() => large.classList.remove('entering')));
   } else {
-    // 收起时若处于详情子视图，静默重置回列表（否则下次展开卡在覆盖层）
+    // 收起时若处于详情子视图，静默重置（否则下次展开卡在覆盖层）；看板布局保留记忆
     if (state.largeView === 'detail'){
-      state.largeView = 'list';
+      state.largeView = state.detailFrom === 'board' ? 'board' : 'list';
       state.detailId = null;
       state.detail = null;
       byId('detail').style.display = 'none';

@@ -7,22 +7,24 @@
  *         刷新来源 = 发表评论（task.comment 事件）+ 轮询兜底（api.js tick）。
  * ============================================================ */
 
-// 进入详情：拉数据 → 显示覆盖层（列表渲染在 detail 模式下跳过，见 render-large.js）
+// 进入详情：拉数据 → 显示覆盖层（列表/看板渲染在 detail 模式下跳过）
 async function openDetail(task){
   if (byId('newPanel').style.display === 'flex'){ toggleNewPanel(false); }
+  state.detailFrom = state.largeView;      // 记录来源布局（list / board）
   state.detailId = task.id;
   state.largeView = 'detail';
   byId('detail').style.display = 'flex';
   await refreshDetail();
 }
 
-// 返回列表
+// 返回来源视图（列表或看板）
 function closeDetail(){
-  state.largeView = 'list';
+  const back = state.detailFrom === 'board' ? 'board' : 'list';
+  state.largeView = back;
   state.detailId = null;
   state.detail = null;
   byId('detail').style.display = 'none';
-  renderLarge();                       // 恢复列表渲染（含 offline/empty 状态）
+  if (back === 'board'){ renderBoard(); } else { renderLarge(); }
 }
 
 // 拉取并渲染（任务被外部删除时退回列表；其他错误 toast 提示而非静默吞掉）

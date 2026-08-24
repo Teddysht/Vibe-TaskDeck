@@ -6,8 +6,6 @@
  * 写操作成功后 emit 事件驱动前端即时刷新。
  * ============================================================ */
 
-use std::path::{Path, PathBuf};
-
 use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::db::{self, Db};
@@ -103,36 +101,49 @@ pub fn add_comment(
 /// 成功后开 fullboard 窗口。
 #[tauri::command]
 pub async fn open_full_board(app: AppHandle) -> Result<serde_json::Value, db::CommandError> {
-    // 仓库根：exe 位于 <repo>/widget/src-tauri/target/<triple>/<profile>/，上溯 4 级
+    // 仓库根：从 exe 所在目录逐级向上查找含 skill/taskboard.py 与 upstream/ 的目录
+    // （exe 嵌套层级可能因 target/profile 变化，不硬编码层级数）
     let repo_root = std::env::current_exe()
         .ok()
-        .and_then(|p| p.parent().map(Path::new).map(|p| p.to_path_buf()))
-        .and_then(|p| p.parent().map(PathBuf::from))
-        .and_then(|p| p.parent().map(PathBuf::from))
-        .and_then(|p| p.parent().map(PathBuf::from))
+        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
+        .and_then(|start| {
+            let mut cur = Some(start);
+            while let Some(dir) = cur {
+                if dir.join("skill").join("taskboard.py").is_file()
+                    && dir.join("upstream").is_dir()
+                {
+                    return Some(dir);
+                }
+                cur = dir.parent().map(|p| p.to_path_buf());
+            }
+            None
+        })
         .ok_or_else(|| db::CommandError {
             code: "FULLBOARD_UNAVAILABLE",
-            message: "无法定位仓库根目录".into(),
+            message: "未找到仓库根目录（需含 skill/taskboard.py 与 upstream/；全版看板依赖 upstream 源码 + Node 22.5+）".into(),
         })?;
     let script = repo_root.join("skill").join("taskboard.py");
     let source = repo_root.join("upstream");
-    if !script.is_file() || !source.is_dir() {
-        return Err(db::CommandError {
-            code: "FULLBOARD_UNAVAILABLE",
-            message: "未找到 skill/taskboard.py 或 upstream/ 源码目录（全版看板需要 upstream + Node 22.5+）".into(),
-        });
-    }
 
     // 调 wrapper（阻塞等待就绪，默认超时 20s；--json 便于解析 url）
-    // 用 tauri::async_runtime 的进程执行（Tauri 内置 tokio，无需额外依赖）
+    // 用 tauri::async_runtime 的进程执行（Tauri 内置 tokio，无需额外依赖）。
+    // CREATE_NO_WINDOW：挂件是 GUI 程序无控制台，python 是 console 程序，
+    // 不加此标志 Windows 会弹出「Python」控制台黑窗（node 孙进程还会继承持有）。
     let output = tauri::async_runtime::spawn_blocking(move || {
-        std::process::Command::new("python")
+        let mut command = std::process::Command::new("python");
+        command
             .arg(&script)
             .arg("--source")
             .arg(&source)
             .arg("--json")
-            .arg("start")
-            .output()
+            .arg("start");
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+            command.creation_flags(CREATE_NO_WINDOW);
+        }
+        command.output()
     })
     .await
     .map_err(|e| db::CommandError {

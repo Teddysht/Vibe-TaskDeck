@@ -22,7 +22,7 @@ const ROOT = resolve(__dirname, '..'); // widget/
 const SRC = join(ROOT, 'web', 'src');
 const DIST = join(ROOT, 'dist');
 
-// 依赖顺序：config → state → api → render-mini → render-large → detail → bridge → main
+// 依赖顺序：config → state → api → render-mini → render-large → render-board → detail → bridge → main
 const STYLES = [
   'styles/tokens.css',
   'styles/widget.css',
@@ -34,6 +34,7 @@ const SCRIPTS = [
   'js/api.js',
   'js/render-mini.js',
   'js/render-large.js',
+  'js/render-board.js',
   'js/detail.js',
   'js/bridge.js',
   'js/main.js',

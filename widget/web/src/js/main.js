@@ -19,8 +19,12 @@ function bindEvents(){
       await openFullBoard();
       showToast('全版看板已打开');
     }catch(e){
-      const msg = (e && (e.message || e)) || '打开失败';
-      showToast(msg.includes('node') || msg.includes('Node') ? '需要 Node.js 22.5+ 与 upstream 源码' : msg, true);
+      // FULLBOARD_UNAVAILABLE = 环境缺失（Node/upstream），其余原样透传真实错误
+      const unavailable = e && e.code === 'FULLBOARD_UNAVAILABLE';
+      const msg = unavailable
+        ? '全版看板需要 Node.js 22.5+ 与 upstream 源码（含 npm install）'
+        : ((e && (e.message || e)) || '打开失败');
+      showToast(msg, true);
     }finally{
       btn.disabled = false;
       btn.classList.remove('spin');
@@ -36,6 +40,29 @@ function bindEvents(){
     const c = e.target.closest('.c');
     if (!c) return;
     setFilter(c.dataset.s);
+  });
+  // 列表/看板布局切换（detail 态下忽略——先 Esc 返回）
+  byId('viewToggle').addEventListener('click', () => {
+    switchLargeLayout(state.largeView === 'list' ? 'board' : 'list');
+  });
+  // 看板卡片：快捷流转 / 点卡片进详情（与列表同一交互协议）
+  byId('board').addEventListener('click', async (e) => {
+    const card = e.target.closest('.bcard');
+    if (!card) return;
+    const task = state.tasks.find((t) => t.id === card.dataset.id);
+    if (!task) return;
+    const btn = e.target.closest('button[data-a]');
+    if (btn){
+      btn.disabled = true;
+      try{ await moveTask(task, btn.dataset.a); }
+      catch(err){
+        console.error('move failed', err);
+        showToast((err && (err.message || err)) || '流转失败', true);
+      }
+      finally{ btn.disabled = false; }
+      return;
+    }
+    openDetail(task).catch((err) => console.error('open detail failed', err));
   });
   // 列表：快捷操作按钮 / 点条目进详情（L3-本机）
   byId('list').addEventListener('click', async (e) => {

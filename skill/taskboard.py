@@ -248,7 +248,12 @@ def start(args, root: Path) -> int:
     env.setdefault("CODEX_TASKBOARD_PORT", str(args.port))
     # server 模式与挂件 / taskctl-local 共用同一数据库（纯客户端三端同库）
     env.setdefault("CODEX_TASKBOARD_DATA_DIR", str(data_dir(root)))
-    creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+    # CREATE_NO_WINDOW：被无控制台的调用方（挂件 exe）拉起时不弹「Python/node」黑窗；
+    # CREATE_NEW_PROCESS_GROUP：独立进程组便于 stop 定向终止。server 输出已重定向到日志，不依赖控制台。
+    creationflags = (
+        getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    )
     # 直接启动 node 进程，避免 npm.cmd 包装器导致托管 pid 与监听进程不一致。
     command = ["node", "server/index.mjs"]
     try:

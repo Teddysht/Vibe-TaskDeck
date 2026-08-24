@@ -9,8 +9,8 @@ function countsMap(){
 }
 
 function renderLarge(){
-  // 详情视图时跳过列表重绘（覆盖层下无意义；closeDetail 时会主动调用恢复）
-  if (state.largeView === 'detail') return;
+  // 详情/看板视图时跳过列表重绘（覆盖层或 board 容器已接管；返回列表时会主动调用恢复）
+  if (state.largeView === 'detail' || state.largeView === 'board') return;
   // 项目名
   const proj = state.projects.find((p) => p.id === 'local') || state.projects[0];
   byId('projName').textContent = proj?.name || '—';

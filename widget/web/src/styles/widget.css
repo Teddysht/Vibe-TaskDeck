@@ -183,3 +183,36 @@
 .detail .d-composer button.primary{background:var(--accent);border-color:transparent;color:var(--text-inverse)}
 .detail .d-composer button.primary:hover{background:var(--accent-hover)}
 .detail .d-composer button:disabled{opacity:.55;cursor:default}
+
+/* ============ 看板列视图（board 布局，920×560） ============ */
+.board{flex:1;display:none;gap:8px;padding:10px 12px 4px;overflow-x:auto;overflow-y:hidden;min-width:0}
+.bcol{flex:1 1 0;min-width:128px;display:flex;flex-direction:column;gap:6px;min-height:0}
+.bhead{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 0;flex:0 0 auto}
+.bhead .n{font-size:var(--font-xs);font-weight:600;color:var(--text-weak);letter-spacing:.3px}
+.bhead .c{font-size:var(--font-xs);color:var(--text-weak);font-variant-numeric:tabular-nums;background:var(--bg-surface-2);border-radius:99px;padding:1px 7px;min-width:16px;text-align:center}
+.bstack{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:4px;padding:2px 0 8px;min-height:0}
+.bempty{font-size:var(--font-xs);color:var(--text-weak);opacity:.5;text-align:center;padding:14px 0;border:1px dashed var(--border-subtle);border-radius:var(--radius-md)}
+.bcard{flex:0 0 auto;display:flex;flex-direction:column;gap:5px;padding:9px 10px;border-radius:var(--radius-md);background:var(--bg-surface-2);border:1px solid var(--border-subtle);cursor:pointer;transition:background var(--duration-fast) var(--ease-out),border-color var(--duration-fast) var(--ease-out)}
+.bcard:hover{background:var(--bg-surface-3);border-color:var(--border-hover)}
+.bcard .row1{display:flex;align-items:center;gap:6px;min-width:0}
+.bcard .shape{flex:0 0 auto;width:8px;height:8px;border-radius:50%}
+.bcard .shape.progress{background:var(--accent)}
+.bcard .shape.blocked{background:var(--danger)}
+.bcard .shape.done{background:var(--success)}
+.bcard .shape.idle{border:1.5px solid var(--text-weak);background:transparent}
+.bcard .shape.review{border:1.5px solid var(--accent);background:transparent}
+.bcard .pri{flex:0 0 auto;font-size:var(--font-xs);font-weight:600;padding:1px 6px;border-radius:var(--radius-xs);letter-spacing:.2px}
+.bcard .pri.urgent{color:var(--danger-soft);background:var(--danger-bg)}
+.bcard .pri.high{color:var(--accent-hover);background:var(--accent-soft)}
+.bcard .due{flex:1;min-width:0;text-align:right;font-size:var(--font-xs);color:var(--text-weak);font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.bcard .due .overdue{color:var(--danger-soft);font-weight:600}
+.bcard .t{font-size:var(--font-sm);line-height:1.35;color:var(--text-primary);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.bcard.dim .t{color:var(--text-weak)}
+.bcard .m{font-size:var(--font-xs);color:var(--text-weak);font-variant-numeric:tabular-nums}
+.bcard .act{display:none;gap:4px}
+.bcard:hover .act{display:flex}
+.bcard .act button{flex:1;font-size:var(--font-xs);padding:3px 6px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);background:var(--bg-surface-3);color:var(--text-secondary);cursor:pointer;font-weight:500;transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out),transform var(--duration-fast) var(--ease-out);white-space:nowrap}
+.bcard .act button:active{transform:scale(.97)}
+.bcard .act button:hover{color:var(--text-primary);border-color:var(--border-hover)}
+.bcard .act button.primary{background:var(--accent);border-color:transparent;color:var(--text-inverse)}
+.bcard .act button.primary:hover{background:var(--accent-hover)}

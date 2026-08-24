@@ -11,7 +11,8 @@ const state = {
   idx: 0,          // 轮转当前位置
   view: null,      // 当前视图：'mini' | 'large'；null=未初始化（见 bridge.js 守卫注释）
   filter: 'all',   // large 列表筛选：'all' | 状态枚举
-  largeView: 'list', // large 内部子视图：'list' | 'detail'（L3-本机详情+评论）
+  largeView: 'list', // large 布局：'list'（单列）| 'board'（看板列）；'detail' 为覆盖态
+  detailFrom: 'list', // 进入详情前的布局（返回目标）
   detailId: null,  // 当前详情的任务 id
   detail: null,    // 当前详情数据（issue_detail 返回的 {task, comments, activities}）
 };
