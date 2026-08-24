@@ -74,7 +74,10 @@ function bindEvents(){
     if (btn){
       btn.disabled = true;
       try{ await moveTask(task, btn.dataset.a); }
-      catch(err){ console.error('move failed', err); }
+      catch(err){
+        console.error('move failed', err);
+        showToast((err && (err.message || err)) || '流转失败', true);
+      }
       finally{ btn.disabled = false; }
       return;
     }

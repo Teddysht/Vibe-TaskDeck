@@ -15,9 +15,10 @@ function renderLarge(){
   const proj = state.projects.find((p) => p.id === 'local') || state.projects[0];
   byId('projName').textContent = proj?.name || '—';
 
-  // 状态计数条
+  // 状态计数条（首格「全部」——筛选的唯一复位入口，没有它点入状态后回不到全量列表）
   const map = countsMap();
-  byId('counts').innerHTML = STATUS_ORDER.map((s) => {
+  const allCell = `<div class="c${state.filter === 'all' ? ' on' : ''}" data-s="all"><div class="n">${state.tasks.length}</div><div class="l">全部</div></div>`;
+  byId('counts').innerHTML = allCell + STATUS_ORDER.map((s) => {
     const n = map[s] || 0;
     const danger = s === 'blocked' ? ' danger' : '';
     const on = state.filter === s ? ' on' : '';

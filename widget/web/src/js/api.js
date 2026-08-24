@@ -40,10 +40,13 @@ async function moveTask(task, status){
     // 版本过期：重读最新 version 后重试一次
     await loadData().catch(() => {});
     const fresh = state.tasks.find((t) => t.id === task.id);
-    if (fresh && fresh.version){ result = await doMove(fresh.version); }
+    if (!fresh) throw new Error('任务已被删除，流转未生效');
+    if (fresh.version){ result = await doMove(fresh.version); }
   }
-  // 无论成败都刷新一次（成功用最新数据；仍冲突则靠轮询兜底）
+  // 无论成败都刷新一次（成功用最新数据）
   await loadData().catch(() => {});
+  // 二次仍冲突：抛错让调用方提示用户，不再静默等轮询兜底
+  if (result && result.conflict) throw new Error('任务刚被外部修改，请重试');
 }
 
 // 任务详情（L3-本机：task 全字段 + 评论 + 活动流）
