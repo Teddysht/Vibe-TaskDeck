@@ -71,7 +71,7 @@ fn main() {
             };
             let logical_w = physical_w / scale;
             let pos_x = (logical_w - 280.0 - 24.0).max(0.0);
-            tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("mini.html".into()))
+            let mut builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("mini.html".into()))
                 .title("dashi-taskboard 挂件")
                 .inner_size(280.0, 48.0)
                 .position(pos_x, 16.0)
@@ -85,8 +85,17 @@ fn main() {
                 // 若复现（拉起后窗口不存在/全透明不可见），回退为
                 // .transparent(false) + .background_color(#0a0b0d) + body 不透明底色。
                 .transparent(true)
-                .shadow(false)
-                .build()?;
+                .shadow(false);
+            // debug 构建：开 CDP 调试端口，供无头端到端验证连接（WEBVIEW2_CDP_PORT 可覆盖）
+            #[cfg(debug_assertions)]
+            {
+                if let Ok(port) = std::env::var("WEBVIEW2_CDP_PORT") {
+                    if let Ok(port) = port.trim().parse::<u16>() {
+                        builder = builder.additional_browser_args(&format!("--remote-debugging-port={port}"));
+                    }
+                }
+            }
+            builder.build()?;
 
             Ok(())
         })
