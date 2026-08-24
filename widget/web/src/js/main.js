@@ -3,7 +3,8 @@
  * ============================================================ */
 
 function bindEvents(){
-  // mini → large
+  // mini → large（胶囊主体也可点：与 expandBtn 同一行为，只扩大热区）
+  byId('mini').addEventListener('click', () => switchView('large'));
   byId('expandBtn').addEventListener('click', (e) => { e.stopPropagation(); switchView('large'); });
   // large → mini
   byId('collapseBtn').addEventListener('click', () => switchView('mini'));
@@ -30,8 +31,9 @@ function bindEvents(){
       btn.classList.remove('spin');
     }
   });
-  // 轮转指示点：跳转
+  // 轮转指示点：跳转（阻断冒泡——点指示点不触发展开）
   byId('miniDots').addEventListener('click', (e) => {
+    e.stopPropagation();
     const i = e.target.dataset.i;
     if (i !== undefined){ state.idx = Number(i); renderMini(); }
   });
