@@ -192,23 +192,55 @@ pub async fn open_full_board(app: AppHandle) -> Result<serde_json::Value, db::Co
     if let Some(existing) = app.get_webview_window("fullboard") {
         let _ = existing.set_focus();
     } else {
-        tauri::WebviewWindowBuilder::new(
-            &app,
-            "fullboard",
-            tauri::WebviewUrl::External(url.parse().map_err(|_| db::CommandError {
-                code: "FULLBOARD_ERROR",
-                message: format!("非法 URL：{url}"),
-            })?),
-        )
-        .title("dashi-taskboard 全版看板")
-        .inner_size(1280.0, 800.0)
-        .center()
-        .min_inner_size(720.0, 480.0)
-        .build()
+        // ?host=codex 激活上游 embedded 模式：隐藏侧栏（单列全宽）、
+        // 拖拽区、紧凑样式——为 iframe 宿主设计的整套适配，Tauri 第二窗口
+        // 同样适用。上游只读，不改其源码，仅通过 URL 参数选择模式。
+        let embedded_url = if url.contains('?') {
+            format!("{url}&host=codex")
+        } else {
+            format!("{url}?host=codex")
+        };
+        // async command 跑在 tokio worker 线程；Windows 上窗口创建必须在
+        // 主线程（否则 build 静默不产窗）。通过 channel 取回主线程结果。
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+        let app_for_thread = app.clone();
+        app.run_on_main_thread(move || {
+            let result = tauri::WebviewWindowBuilder::new(
+                &app_for_thread,
+                "fullboard",
+                tauri::WebviewUrl::External(embedded_url.parse().unwrap()),
+            )
+            .title("dashi-taskboard 全版看板")
+            .inner_size(1280.0, 800.0)
+            .center()
+            // 独立 user-data-dir：第二个 WebView 复用主窗口数据目录时会在
+            // 部分 WebView2 版本上静默失败（build 返回 Ok 但窗口不出现，151 实测）
+            .data_directory(
+                std::env::var("LOCALAPPDATA")
+                    .map(|d| std::path::PathBuf::from(d).join("com.dashi.taskboard-widget").join("fullboard-data"))
+                    .unwrap_or_default(),
+            )
+            // embedded 单列布局无 840px 断点保护，窗口过窄时看板列会挤压；
+            // 下限收到 embedded 可用宽度（侧栏已隐藏，主区即全部）
+            .min_inner_size(900.0, 520.0)
+            .build()
+            .map(|_| ())
+            .map_err(|e| format!("创建全版窗口失败：{e}"));
+            let _ = tx.send(result);
+        })
         .map_err(|e| db::CommandError {
             code: "FULLBOARD_ERROR",
-            message: format!("创建全版窗口失败：{e}"),
+            message: format!("主线程调度失败：{e}"),
         })?;
+        rx.recv()
+            .map_err(|_| db::CommandError {
+                code: "FULLBOARD_ERROR",
+                message: "全版窗口创建结果未返回".into(),
+            })?
+            .map_err(|e| db::CommandError {
+                code: "FULLBOARD_ERROR",
+                message: e,
+            })?;
     }
     Ok(serde_json::json!({ "ok": true, "url": url }))
 }
