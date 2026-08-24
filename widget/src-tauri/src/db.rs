@@ -251,7 +251,8 @@ pub fn load_data(conn: &Connection) -> Value {
 pub fn list_tasks(conn: &Connection) -> Vec<Value> {
     let mut stmt = match conn.prepare(
         "SELECT id, identifier, project_id, title, status, priority, labels, sort_order,
-                thread_id, start_date, due_date, archived_at, version, created_at, updated_at
+                thread_id, start_date, due_date, archived_at, version, created_at, updated_at,
+                creator_type
          FROM tasks
          ORDER BY
            CASE status
@@ -285,6 +286,7 @@ pub fn list_tasks(conn: &Connection) -> Vec<Value> {
             version: row.get(12)?,
             created_at: row.get(13)?,
             updated_at: row.get(14)?,
+            creator_type: row.get(15)?,
         })
     });
     match rows {
@@ -326,6 +328,7 @@ struct TaskColumns {
     version: i64,
     created_at: String,
     updated_at: String,
+    creator_type: String,
 }
 
 fn task_to_json(t: TaskColumns) -> Value {
@@ -346,13 +349,15 @@ fn task_to_json(t: TaskColumns) -> Value {
         "version": t.version,
         "createdAt": t.created_at,
         "updatedAt": t.updated_at,
+        "creatorType": t.creator_type,
     })
 }
 
 fn get_task_columns(conn: &Connection, id: &str) -> rusqlite::Result<Option<TaskColumns>> {
     let mut stmt = conn.prepare(
         "SELECT id, identifier, project_id, title, status, priority, labels, sort_order,
-                thread_id, start_date, due_date, archived_at, version, created_at, updated_at
+                thread_id, start_date, due_date, archived_at, version, created_at, updated_at,
+                creator_type
          FROM tasks WHERE id = ?1 OR identifier = ?1",
     )?;
     let mut rows = stmt.query_map(rusqlite::params![id], |row| {
@@ -372,6 +377,7 @@ fn get_task_columns(conn: &Connection, id: &str) -> rusqlite::Result<Option<Task
             version: row.get(12)?,
             created_at: row.get(13)?,
             updated_at: row.get(14)?,
+            creator_type: row.get(15)?,
         })
     })?;
     match rows.next() {
@@ -776,6 +782,30 @@ mod tests {
             create_task(&conn, "标题", "backlog", "bad_priority", None).unwrap_err().code,
             "INVALID_FIELD"
         );
+    }
+
+    #[test]
+    /// 回归：list_tasks 必须带 creatorType——曾因缺字段导致挂件 L1/L2 的
+    /// agent 徽标对真实数据不渲染（mock 数据自带字段掩盖了缺口）
+    fn list_tasks_includes_creator_type() {
+        let conn = test_db();
+        create_task(&conn, "用户任务", "todo", "none", None).unwrap();
+        // 直接写入一条 agent 任务（对齐 taskctl 的 CODEX_AGENT_ACTOR 写入口径）
+        conn.execute(
+            "INSERT INTO tasks (id, identifier, project_id, title, description, status, priority,
+             labels, sort_order, thread_id, creator_type, creator_id, creator_name,
+             assignee_type, assignee_id, assignee_name, version, created_at, updated_at)
+             VALUES ('ag-1', 'LOCAL-9', 'local', 'agent 任务', '', 'todo', 'none',
+             '[]', 1000, 'th-test', 'agent', 'codex-agent', 'Codex Agent',
+             'agent', 'codex-agent', 'Codex Agent', 1, '2026-01-01T00:00:00.000Z', '2026-01-01T00:00:00.000Z')",
+            [],
+        )
+        .unwrap();
+        let tasks = list_tasks(&conn);
+        let agent = tasks.iter().find(|t| t["title"] == "agent 任务").unwrap();
+        assert_eq!(agent["creatorType"], "agent");
+        let user = tasks.iter().find(|t| t["title"] == "用户任务").unwrap();
+        assert_eq!(user["creatorType"], "user");
     }
 
     #[test]
