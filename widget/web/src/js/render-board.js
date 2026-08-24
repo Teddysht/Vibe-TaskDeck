@@ -49,10 +49,11 @@ function renderBoard(){
       const acts = boardActions(t).map((a) =>
         `<button data-a="${a.s}"${a.primary ? ' class="primary"' : ''}>${a.label}</button>`
       ).join('');
+      const agent = t.creatorType === 'agent' ? '<span class="ag" title="AI 会话创建">AI</span>' : '';
       return `<div class="bcard${t.status === 'done' ? ' dim' : ''}" data-id="${t.id}" role="button" tabindex="0">
-        <div class="row1"><div class="shape ${shapeClass(t.status)}"></div>${pri}${dueHtml ? `<div class="due">${dueHtml}</div>` : ''}</div>
-        <div class="t">${t.title}</div>
-        <div class="m">${t.identifier}</div>
+        <div class="row1"><div class="shape ${shapeClass(t.status)}"></div>${agent}${pri}${dueHtml ? `<div class="due">${dueHtml}</div>` : ''}</div>
+        <div class="t">${esc(t.title)}</div>
+        <div class="m">${esc(t.identifier)}</div>
         ${acts ? `<div class="act">${acts}</div>` : ''}
       </div>`;
     }).join('');

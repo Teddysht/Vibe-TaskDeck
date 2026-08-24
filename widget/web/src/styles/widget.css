@@ -7,12 +7,14 @@
   width:100%;height:100%;background:var(--bg-surface);
   border:1px solid var(--border-subtle);border-radius:var(--radius-lg);
   display:flex;align-items:center;gap:var(--space-3);padding:0 14px;
-  -webkit-app-region:drag;               /* 主体可拖拽 */
+  -webkit-app-region:drag;               /* 主体可拖拽；点击展开由 .body 豁免（drag 区会吞点击） */
   overflow:hidden;position:relative;
   transition:border-color var(--duration-base) var(--ease-out),
              opacity 120ms var(--ease-out),transform 120ms var(--ease-out);
   opacity:1;transform:none;
 }
+/* 内容区可点展开（与 expandBtn 同一行为）；文案区仍可拖——拖拽热区让给边框与空白 */
+.mini .body{-webkit-app-region:no-drag;cursor:pointer}
 .mini.entering{opacity:0}
 .mini:hover{border-color:var(--border-strong)}
 .mini .shape{flex:0 0 auto;width:9px;height:9px;border-radius:50%}
@@ -22,6 +24,7 @@
 .mini .shape.idle{border:1.5px solid var(--text-weak);background:transparent}
 .mini .shape.review{border:1.5px solid var(--accent);background:transparent}
 .mini .body{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:1px}
+.mini .body:hover .t{color:var(--text-primary)}
 .mini .t{font-size:var(--font-md);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary);font-weight:500}
 .mini .meta{font-size:var(--font-sm);color:var(--text-weak);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums}
 .mini .meta.overdue{color:var(--danger-soft);font-weight:600}
@@ -141,6 +144,9 @@
 .ft button:hover{background:var(--bg-surface-3);border-color:var(--border-hover)}
 .ft button.primary{background:var(--accent);border-color:transparent}
 .ft button.primary:hover{background:var(--accent-hover)}
+
+/* ============ agent 徽标（人机协议信号，L1/L2/L3 同口径；色与 L3 详情 .agent 同源） ============ */
+.ag{display:inline-block;font-size:9px;font-weight:700;letter-spacing:.4px;color:var(--accent-hover);background:var(--accent-soft);border-radius:var(--radius-xs);padding:1px 4px;margin-right:5px;line-height:1.5;vertical-align:1px}
 
 /* ============ 通用 toast ============ */
 #toast{position:fixed;left:50%;bottom:56px;transform:translateX(-50%) translateY(6px);max-width:82%;padding:7px 14px;border-radius:var(--radius-md);background:var(--bg-surface-3);border:1px solid var(--border-strong);color:var(--text-primary);font-size:var(--font-sm);line-height:1.4;z-index:20;opacity:0;pointer-events:none;transition:opacity var(--duration-base) var(--ease-out),transform var(--duration-base) var(--ease-out);box-shadow:0 4px 16px rgba(0,0,0,.4);overflow-wrap:anywhere}

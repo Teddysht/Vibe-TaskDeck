@@ -59,9 +59,10 @@ function renderLarge(){
     ).join('');
     const due = shortDate(t.dueDate);
     const dueHtml = due ? ` · <span${isOverdue(t.dueDate) ? ' class="overdue"' : ''}>${due}</span>` : '';
+    const agent = t.creatorType === 'agent' ? '<span class="ag" title="AI 会话创建">AI</span>' : '';
     return `<div class="item${dim}" data-id="${t.id}" role="button" tabindex="0">
       <div class="shape ${shapeClass(t.status)}"></div>
-      <div class="mid"><div class="t">${t.title}</div><div class="m">${t.identifier}${dueHtml}</div></div>
+      <div class="mid"><div class="t">${esc(t.title)}</div><div class="m">${agent}${esc(t.identifier)}${dueHtml}</div></div>
       ${pri}
       <div class="act">${act}</div>
     </div>`;

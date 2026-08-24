@@ -37,7 +37,9 @@ function renderMini(){
   shape.className = 'shape ' + shapeClass(item.status);
   title.textContent = item.title;
   const due = shortDate(item.dueDate);
-  meta.textContent = item.identifier + ' · ' + STATUS_LABEL[item.status] + (due ? ' · ' + due : '');
+  // agent 徽标（与 L2/L3 同口径；innerHTML 只含自产字符串，title 已在上面 textContent 转义）
+  meta.innerHTML = (item.creatorType === 'agent' ? '<span class="ag" title="AI 会话创建">AI</span>' : '')
+    + esc(item.identifier + ' · ' + STATUS_LABEL[item.status] + (due ? ' · ' + due : ''));
   meta.classList.toggle('overdue', isOverdue(item.dueDate));
 
   // 轮转切换到不同任务时给一次轻过渡（同一任务的数据刷新不打扰）
