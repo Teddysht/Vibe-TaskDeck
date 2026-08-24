@@ -28,6 +28,10 @@ function setSize(w, h){
 // 首次 switchView('mini') 会走完整路径——解除容器隐藏并启动轮转。
 // 若把初始值设回 'mini'，启动调用会被同值守卫早退，两容器保持内联
 // display:none，页面只剩 body 背景（曾导致整窗黑屏，勿回退）。
+// 布局切换按钮的图标对（P2-1：图标显示目标视图，与 boardBtn 外链图标语义区分）
+const ICON_BOARD = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="6" height="16" rx="1.5"/><rect x="10" y="4" width="6" height="10" rx="1.5"/><rect x="17" y="4" width="4" height="13" rx="1.5"/></svg>';
+const ICON_LIST = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h16M4 18h10"/></svg>';
+
 // large 内部布局切换：'list'（360×520）↔ 'board'（920×560）
 // detail 覆盖层不属于布局（不动窗口尺寸）；切换只在非 detail 态下发生
 function switchLargeLayout(layout){
@@ -38,12 +42,14 @@ function switchLargeLayout(layout){
     byId('empty').style.display = 'none';
     byId('counts').style.display = 'none';
     byId('viewToggle').title = '切换回列表视图';
+    byId('viewToggle').innerHTML = ICON_LIST;   // 显示目标视图（列表）
     setSize(SIZES.board.w, SIZES.board.h);
     renderBoard();
   } else {
     byId('board').style.display = 'none';
     byId('counts').style.display = 'flex';
     byId('viewToggle').title = '切换看板视图';
+    byId('viewToggle').innerHTML = ICON_BOARD;  // 显示目标视图（看板）
     setSize(SIZES.large.w, SIZES.large.h);
     renderLarge();
   }

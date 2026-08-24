@@ -59,6 +59,9 @@
 .large .hd .ic{width:24px;height:24px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--text-weak);cursor:pointer;-webkit-app-region:no-drag;transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out)}
 .large .hd .ic svg{width:15px;height:15px}
 .large .hd .ic:hover{background:var(--bg-surface-2);color:var(--text-primary)}
+/* 退出是破坏性操作（关窗）：与收起键拉开间距 + hover 红色警示，降低误触（P2-1） */
+.large .hd .ic.close{margin-left:6px}
+.large .hd .ic.close:hover{background:var(--danger-bg);color:var(--danger-soft)}
 
 .counts{display:flex;padding:12px 12px 10px;gap:2px}
 .counts .c{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:6px 2px 7px;border-radius:var(--radius-md);cursor:pointer;position:relative;transition:background var(--duration-fast) var(--ease-out);min-width:0}
