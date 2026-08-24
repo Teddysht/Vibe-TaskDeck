@@ -635,11 +635,13 @@ pub fn issue_detail(conn: &Connection, id: &str) -> Result<Value, CommandError> 
     )?;
     let (description, creator_type, creator_name, assignee_type, assignee_name) = detail;
 
-    // 评论：ORDER BY 逐字对齐 upstream listComments（created_at, id）
+    // 评论：upstream listComments 按 (created_at, id) 排序，但 id 是随机 UUID——
+    // 同毫秒连发时顺序不定（widget 表单与 taskctl 都可能触发）。tiebreaker 改
+    // rowid（插入序=时间序，确定性），仅此处有意偏离上游。
     let mut comments: Vec<Value> = Vec::new();
     let mut stmt = conn.prepare(
         "SELECT id, body, author_type, author_name, version, created_at
-         FROM comments WHERE task_id = ?1 ORDER BY created_at, id",
+         FROM comments WHERE task_id = ?1 ORDER BY created_at, rowid",
     )?;
     let rows = stmt.query_map(rusqlite::params![task.id], |row| {
         Ok(json!({
@@ -655,11 +657,11 @@ pub fn issue_detail(conn: &Connection, id: &str) -> Result<Value, CommandError> 
         comments.push(row?);
     }
 
-    // 活动流：ORDER BY 对齐 upstream listTaskActivities
+    // 活动流：同上，tiebreaker 用 rowid 保证同毫秒事件的稳定顺序
     let mut activities: Vec<Value> = Vec::new();
     let mut stmt = conn.prepare(
         "SELECT actor_type, actor_name, changes, created_at
-         FROM task_activities WHERE task_id = ?1 ORDER BY created_at, id",
+         FROM task_activities WHERE task_id = ?1 ORDER BY created_at, rowid",
     )?;
     let rows = stmt.query_map(rusqlite::params![task.id], |row| {
         Ok(json!({
