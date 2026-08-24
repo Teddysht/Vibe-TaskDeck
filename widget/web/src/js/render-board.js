@@ -6,14 +6,14 @@
  * 点卡片进详情（detail 覆盖层，返回回到看板）。
  * ============================================================ */
 
-// 状态 → 下一步动作按钮（与列表 act 同一套流转协议，窄卡文案精简）
+// 状态 → 下一步动作按钮：列表 / 看板 / 详情三视图共享的流转协议（唯一事实源）
 function boardActions(t){
   switch (t.status){
     case 'todo':        return [{ s:'in_progress', label:'认领', primary:true }];
     case 'in_progress': return [{ s:'in_review', label:'推进' }, { s:'done', label:'完成', primary:true }];
     case 'in_review':   return [{ s:'done', label:'接受', primary:true }, { s:'in_progress', label:'退回' }];
-    case 'blocked':     return [{ s:'todo', label:'解除' }];
-    default:            return [];      // backlog / done 无快捷流转
+    case 'blocked':     return [{ s:'todo', label:'解除阻塞' }];
+    default:            return [];      // backlog / done / canceled 无快捷流转
   }
 }
 

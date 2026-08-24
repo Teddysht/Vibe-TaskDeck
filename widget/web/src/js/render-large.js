@@ -54,11 +54,9 @@ function renderLarge(){
     const dim = (t.status === 'done' || t.status === 'canceled') ? ' dim' : '';
     const badge = priBadge(t.priority);
     const pri = badge ? `<div class="pri ${badge}">${PRI_LABEL[badge]}</div>` : '';
-    const act = t.status === 'todo' ? `<button class="primary" data-a="in_progress">认领</button>`
-      : t.status === 'in_progress' ? `<button data-a="in_review">推进</button><button class="primary" data-a="done">完成</button>`
-      : t.status === 'in_review' ? `<button class="primary" data-a="done">接受</button><button data-a="in_progress">退回</button>`
-      : t.status === 'blocked' ? `<button data-a="todo">解除阻塞</button>`
-      : '';
+    const act = boardActions(t).map((a) =>
+      `<button${a.primary ? ' class="primary"' : ''} data-a="${a.s}">${a.label}</button>`
+    ).join('');
     const due = shortDate(t.dueDate);
     const dueHtml = due ? ` · <span${isOverdue(t.dueDate) ? ' class="overdue"' : ''}>${due}</span>` : '';
     return `<div class="item${dim}" data-id="${t.id}">

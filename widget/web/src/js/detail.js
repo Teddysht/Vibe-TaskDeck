@@ -53,6 +53,11 @@ function renderDetail(){
 
   byId('dTitle').textContent = t.title;
 
+  // 流转动作条（与列表/看板共享 boardActions 协议；backlog/done/canceled 为空自动隐藏）
+  byId('dAct').innerHTML = boardActions(t).map((a) =>
+    `<button${a.primary ? ' class="primary"' : ''} data-a="${a.s}">${a.label}</button>`
+  ).join('');
+
   // 元信息行：优先级 / 截止 / 创建者 / 会话归属（人机协议可见性）/ 创建时间
   const meta = [];
   if (t.priority && t.priority !== 'none'){ meta.push(`<span>${PRI_LABEL[t.priority] || t.priority}优先级</span>`); }
@@ -110,6 +115,23 @@ async function submitComment(){
 
 // 详情内事件绑定（脚本在 body 末尾，DOM 已就绪）
 byId('dBack').addEventListener('click', closeDetail);
+// 流转：与列表/看板同一协议（moveTask 含冲突重试；失败 toast 不静默）
+byId('dAct').addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-a]');
+  if (!btn) return;
+  const task = state.detail && state.detail.task;
+  if (!task) return;
+  btn.disabled = true;
+  try{
+    await moveTask(task, btn.dataset.a);
+    await refreshDetail();               // 状态徽章与动作条即时更新
+  }catch(err){
+    console.error('move failed', err);
+    showToast((err && (err.message || err)) || '流转失败', true);
+  }finally{
+    btn.disabled = false;
+  }
+});
 byId('dcSend').addEventListener('click', submitComment);
 byId('dcInput').addEventListener('keydown', (e) => {
   if (e.key === 'Enter'){ e.preventDefault(); submitComment(); }
