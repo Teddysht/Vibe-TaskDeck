@@ -133,20 +133,79 @@ async function main() {
   })()`);
   await sleep(300);
 
-  // ---- FB-F2 优先级筛选（chip 文案为中文标签） ----
-  await evalJs(`[...document.querySelectorAll('.fb-chip')].find(c => c.textContent === '紧急').click(); 'ok'`);
+  // ---- FB-F2 筛选收纳下拉（方案 A） ----
+  // 默认态：筛选栏不铺平芯片，只有搜索框 + 筛选触发器
+  const defaultBar = await evalJs(`(() => ({
+    barChips: document.querySelectorAll('.fb-filterbar > .fb-chip').length,
+    filterBtn: !!document.getElementById('fb-filter-btn'),
+  }))()`);
+  check('FB-F2a 默认态无铺平芯片，仅筛选触发器', defaultBar.barChips === 0 && defaultBar.filterBtn === true, JSON.stringify(defaultBar));
+
+  // 打开下拉面板 → 选「紧急」优先级
+  await evalJs(`document.getElementById('fb-filter-btn').click(); 'ok'`);
+  await sleep(300);
+  const menuOpen = await evalJs(`(() => ({
+    open: !!document.querySelector('.fb-filtermenu'),
+    groups: [...document.querySelectorAll('.fb-fgtitle')].map(g => g.textContent),
+    labelChips: document.querySelectorAll('.fb-filtermenu .fb-flabels .fb-chip').length,
+  }))()`);
+  check('FB-F2b 面板开：状态/优先级/标签三组', menuOpen.open && menuOpen.groups.join(',') === '状态,优先级,标签', JSON.stringify(menuOpen));
+  check('FB-F2c 标签组全量收纳（不 slice 8 个）', menuOpen.labelChips === 2, `labelChips=${menuOpen.labelChips}`);
+
+  await evalJs(`[...document.querySelectorAll('.fb-filtermenu .fb-chip')].find(c => c.textContent === '紧急').click(); 'ok'`);
   await sleep(400);
   const priFiltered = await evalJs(`(() => ({
     cards: document.querySelectorAll('.fb-card').length,
     url: location.search,
+    badge: document.querySelector('.fb-filtercount')?.textContent,
+    activeChip: document.querySelector('.fb-filterbar > .fb-activechip')?.textContent,
   }))()`);
-  check('FB-F2a 优先级 urgent 筛选只剩 1 张', priFiltered.cards === 1, `cards=${priFiltered.cards}`);
-  check('FB-F2b URL 同步 priority 参数', priFiltered.url.includes('priority=urgent'), `url=${priFiltered.url}`);
-  // 清除
-  await evalJs(`document.querySelector('.fb-clear')?.click(); 'ok'`);
+  check('FB-F2d 优先级 urgent 筛选只剩 1 张', priFiltered.cards === 1, `cards=${priFiltered.cards}`);
+  check('FB-F2e URL 同步 priority 参数', priFiltered.url.includes('priority=urgent'), `url=${priFiltered.url}`);
+  check('FB-F2f 触发器计数徽标 = 1', priFiltered.badge === '1', `badge=${priFiltered.badge}`);
+  check('FB-F2g 已激活条件显示为可删胶囊', (priFiltered.activeChip || '').includes('紧急'), `chip=${priFiltered.activeChip}`);
+
+  // 可删胶囊：点 × 移除单个条件
+  await evalJs(`document.querySelector('.fb-filterbar > .fb-activechip')?.click(); 'ok'`);
   await sleep(300);
-  const cleared = await evalJs(`document.querySelectorAll('.fb-card').length`);
-  check('FB-F2c 清除筛选恢复全部', cleared === 3, `cards=${cleared}`);
+  const removed = await evalJs(`(() => ({
+    cards: document.querySelectorAll('.fb-card').length,
+    badge: !!document.querySelector('.fb-filtercount'),
+  }))()`);
+  check('FB-F2h 可删胶囊移除单个条件', removed.cards === 3 && removed.badge === false, JSON.stringify(removed));
+
+  // 面板内再选一个 → 清除全部（含搜索词）。注：点可删胶囊（面板外）已触发外点关闭，需重开
+  await evalJs(`document.getElementById('fb-filter-btn').click(); 'ok'`);
+  await sleep(250);
+  await evalJs(`[...document.querySelectorAll('.fb-filtermenu .fb-chip')].find(c => c.textContent === '紧急').click(); 'ok'`);
+  await sleep(300);
+  await evalJs(`document.querySelector('.fb-filtermenu .fb-clear')?.click(); 'ok'`);
+  await sleep(300);
+  const cleared = await evalJs(`(() => ({
+    cards: document.querySelectorAll('.fb-card').length,
+    badge: !!document.querySelector('.fb-filtercount'),
+  }))()`);
+  check('FB-F2i 清除全部恢复 3 张且徽标消失', cleared.cards === 3 && cleared.badge === false, JSON.stringify(cleared));
+
+  // 面板外点关闭
+  await evalJs(`document.querySelector('.fb-board').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); 'ok'`);
+  await sleep(250);
+  const menuClosed = await evalJs(`!document.querySelector('.fb-filtermenu')`);
+  check('FB-F2j 面板外点关闭', menuClosed === true);
+
+  // ---- FB-F2k 状态筛选=看板只留所选列（新语义：列即状态） ----
+  await evalJs(`document.getElementById('fb-filter-btn').click(); 'ok'`);
+  await sleep(250);
+  await evalJs(`[...document.querySelectorAll('.fb-filtermenu .fb-chip')].find(c => c.textContent === '待处理').click(); 'ok'`);
+  await sleep(400);
+  const statusFiltered = await evalJs(`(() => ({
+    cols: document.querySelectorAll('.fb-col').length,
+    cards: document.querySelectorAll('.fb-card').length,
+  }))()`);
+  check('FB-F2k 状态筛选只留所选列（todo 列 2 卡）', statusFiltered.cols === 1 && statusFiltered.cards === 2, JSON.stringify(statusFiltered));
+  // 清除，避免影响后续
+  await evalJs(`document.querySelector('.fb-filtermenu .fb-clear')?.click(); 'ok'`);
+  await sleep(300);
 
   // ---- FB-F3 列表视图 ----
   await evalJs(`[...document.querySelectorAll('.fb-viewtoggle button')].find(b => b.textContent === '列表').click(); 'ok'`);
@@ -159,6 +218,26 @@ async function main() {
   check('FB-F3a 列表视图渲染 3 行', listView.rows === 3, `rows=${listView.rows}`);
   check('FB-F3b ?view=list URL 同步', listView.url.includes('view=list'), `url=${listView.url}`);
   check('FB-F3c 列表 agent 徽标', listView.agBadge === true);
+
+  // FB-F3d 列表视图筛选生效（新语义：filteredTasks 全量过滤）——搜索「登录」只剩 2 行
+  await evalJs(`(() => {
+    const i = document.getElementById('fb-search');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(i, '登录');
+    i.dispatchEvent(new Event('input', { bubbles: true }));
+    return 'ok';
+  })()`);
+  await sleep(400);
+  const listFiltered = await evalJs(`document.querySelectorAll('.fb-list-row').length`);
+  check('FB-F3d 列表视图搜索过滤 3→2 行', listFiltered === 2, `rows=${listFiltered}`);
+  await evalJs(`(() => {
+    const i = document.getElementById('fb-search');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(i, '');
+    i.dispatchEvent(new Event('input', { bubbles: true }));
+    return 'ok';
+  })()`);
+  await sleep(300);
   // 切回看板
   await evalJs(`[...document.querySelectorAll('.fb-viewtoggle button')].find(b => b.textContent === '看板').click(); 'ok'`);
   await sleep(300);

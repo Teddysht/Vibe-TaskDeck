@@ -37,12 +37,16 @@ export default function BoardView({
     if (settlingTimer.current !== undefined) clearTimeout(settlingTimer.current);
   }, []);
 
-  // 筛选后的列内按 sortOrder 升序（与 db list_tasks 排序一致）
+  // 筛选后的列内按 sortOrder 升序（与 db list_tasks 排序一致）。
+  // 状态筛选 = 只显示所选列（列即状态，未选列整列隐藏——比上游「渲染
+  // 空列」更克制：选 1 个状态时看板只留 1 列，视觉聚焦直接达成）
   const sorted = [...tasks]
-    .filter((t) => matchesTaskFilters(t, filters, 'statuses')) // 状态列已表达状态筛选？——
-    // 上游语义：状态筛选时只显示所选列（列即状态）；此处过滤掉未选状态的整列
+    .filter((t) => matchesTaskFilters(t, filters))
     .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt));
   const columns = columnsOf(sorted);
+  const visibleColumns = filters.statuses.length
+    ? BOARD_COLUMNS.filter((s) => filters.statuses.includes(s))
+    : BOARD_COLUMNS;
 
   async function handleDrop(status: string, taskId: string, beforeTaskId: string | null) {
     const task = tasks.find((t) => t.id === taskId);
@@ -124,7 +128,7 @@ export default function BoardView({
 
   return (
     <div className="fb-board">
-      {BOARD_COLUMNS.map((status) => (
+      {visibleColumns.map((status) => (
         <BoardColumn
           key={status}
           status={status}

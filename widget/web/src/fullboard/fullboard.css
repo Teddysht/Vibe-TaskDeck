@@ -603,6 +603,72 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .fb-clear:hover { text-decoration: underline; }
 
+/* ---- 筛选收纳（方案 A）：触发器 + 已激活可删胶囊 + 下拉面板 ---- */
+/* 已激活条件胶囊：沿用 .fb-chip.on 视觉，尾缀 × 表达「点击移除」 */
+.fb-activechip { display: inline-flex; align-items: center; gap: 4px; }
+.fb-activechip .x { font-size: 10px; opacity: .7; line-height: 1; }
+.fb-activechip:hover .x { opacity: 1; }
+/* 触发器：与搜索框同高的描边按钮；漏斗图标 13px 对齐 .ft button svg 规格 */
+.fb-filterwrap { position: relative; display: inline-flex; }
+.fb-filterbtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-sm);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface-2);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-family: inherit;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+.fb-filterbtn svg { width: 13px; height: 13px; }
+.fb-filterbtn:hover { background: var(--bg-surface-3); border-color: var(--border-hover); color: var(--text-primary); }
+.fb-filterbtn.on { color: var(--accent-hover); border-color: var(--accent-hover); background: var(--accent-soft); }
+.fb-filtercount {
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 99px;
+  background: var(--accent);
+  color: var(--text-inverse);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+/* 下拉面板：菜单语言与 .fb-ctxmenu/.d-label-menu 同源（fb-menu-in 150ms） */
+.fb-filtermenu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 50;
+  min-width: 290px;
+  max-width: 420px;
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 10px;
+  box-shadow: var(--shadow-float);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  transform-origin: top left;
+  animation: fb-menu-in 150ms var(--ease-out);
+}
+.fb-fgroup { display: flex; flex-direction: column; gap: 5px; }
+.fb-fgtitle {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--text-weak);
+  letter-spacing: .5px;
+}
+.fb-flabels { max-height: 130px; overflow-y: auto; }  /* 标签全量收纳，超出滚动 */
+
 /* ============ 视图切换 ============ */
 .fb-viewtoggle {
   display: flex;
@@ -921,7 +987,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   @keyframes fb-panel-in-reduced { from { opacity: 0 } to { opacity: 1 } }
   .fb-detail.closing { animation: fb-panel-out-reduced var(--duration-fast) linear forwards; }
   @keyframes fb-panel-out-reduced { from { opacity: 1 } to { opacity: 0 } }
-  .fb-ctxmenu, .d-label-menu { animation: fb-menu-in-reduced var(--duration-fast) linear; }
+  .fb-ctxmenu, .d-label-menu, .fb-filtermenu { animation: fb-menu-in-reduced var(--duration-fast) linear; }
   @keyframes fb-menu-in-reduced { from { opacity: 0 } to { opacity: 1 } }
   .fb-other-list { animation: fb-slide-in-reduced var(--duration-fast) linear; }
   @keyframes fb-slide-in-reduced { from { opacity: 0 } to { opacity: 1 } }
@@ -929,6 +995,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   .fb-col { transition-property: background; }   /* outline-color 过渡一并豁免（保守侧） */
   .fb-card.is-settling { animation: none; }
   .fb-card, .col-list, .fb-col { transition-property: opacity; }
-  .wc-btn, .fb-chip, .fb-viewtoggle button { transition-property: opacity; }
+  .wc-btn, .fb-chip, .fb-viewtoggle button, .fb-filterbtn { transition-property: opacity; }
   button:active, .fb-card:active { transform: none; }
 }

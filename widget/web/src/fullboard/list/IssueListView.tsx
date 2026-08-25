@@ -5,17 +5,20 @@
 import { PRI_LABEL, STATUS_LABEL } from '../../lib/types';
 import type { Task } from '../../lib/types';
 import { isOverdue, shortDate } from '../../lib/format';
+import { matchesTaskFilters } from '../taskFilters';
 import { useBoardStore } from '../store/useBoardStore';
 
 export default function IssueListView({ onRowClick }: { onRowClick: (task: Task) => void }) {
   const tasks = useBoardStore((s) => s.tasks);
+  const filters = useBoardStore((s) => s.filters);
   const online = useBoardStore((s) => s.online);
 
   if (!online) {
     return <div className="fb-offline">数据层不可用，正在重试…</div>;
   }
 
-  const rows = tasks.filter((t) => !t.archivedAt);
+  // 对齐上游 filteredTasks 语义：筛选栏四维（状态/优先级/标签/搜索词）全量生效
+  const rows = tasks.filter((t) => !t.archivedAt && matchesTaskFilters(t, filters));
 
   return (
     <div className="fb-list">
