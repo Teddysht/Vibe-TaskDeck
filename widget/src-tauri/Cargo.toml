@@ -17,6 +17,10 @@ uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 tauri-plugin-notification = "2.3.3"
 tauri-plugin-autostart = "2.5.1"
+tauri-plugin-opener = "2"
+# 版本检查：GitHub Releases API（rustls 免 OpenSSL 系统依赖；
+# system-proxy 读 Windows 系统代理——国内环境 GitHub 直连常不通）
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "system-proxy"] }
 
 [target.'cfg(windows)'.dependencies]
 # 左键状态查询（拖拽检测：拖拽中不做位置 clamp，保证跨屏自由拖动）

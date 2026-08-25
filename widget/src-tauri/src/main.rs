@@ -79,6 +79,7 @@ fn main() {
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             commands::load_data,
             commands::create_task,
@@ -99,6 +100,9 @@ fn main() {
             commands::open_full_board,
             commands::set_window_size,
             commands::close_window,
+            commands::get_app_version,
+            commands::check_update,
+            commands::open_release_page,
         ])
         .setup(|app| {
             // 单实例锁：已在运行时直接退出，不重复拉起第二个挂件

@@ -24,7 +24,7 @@ fn main() {
     tauri_build::try_build(
         tauri_build::Attributes::new().app_manifest(
             tauri_build::AppManifest::new()
-                .commands(&["load_data", "create_task", "move_task", "issue_detail", "add_comment", "update_task", "archive_task", "restore_task", "delete_task", "add_label", "delete_label", "add_relation", "remove_relation", "upload_attachment", "read_attachment", "delete_attachment", "open_full_board", "set_window_size", "close_window"]),
+                .commands(&["load_data", "create_task", "move_task", "issue_detail", "add_comment", "update_task", "archive_task", "restore_task", "delete_task", "add_label", "delete_label", "add_relation", "remove_relation", "upload_attachment", "read_attachment", "delete_attachment", "open_full_board", "set_window_size", "close_window", "get_app_version", "check_update", "open_release_page"]),
         ),
     )
     .expect("failed to run build script");

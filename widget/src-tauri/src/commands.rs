@@ -487,3 +487,81 @@ pub fn close_window(app: AppHandle) {
         let _ = win.close();
     }
 }
+
+/* ============ 版本与更新检查 ============ */
+
+/// 当前应用版本（tauri.conf.json 注入的 CARGO_PKG_VERSION）
+#[tauri::command]
+pub fn get_app_version() -> String {
+    env!("CARGO_PKG_VERSION").to_string()
+}
+
+/// GitHub Release 信息（check_update 的返回载荷）
+#[derive(serde::Serialize)]
+pub struct ReleaseInfo {
+    pub tag: String,        // "v0.2.1"
+    pub name: String,       // release 标题
+    pub notes: String,      // 更新说明（markdown 原文，前端截摘要）
+    pub url: String,        // release 页面链接
+    pub newer: bool,        // 是否比当前版本新
+}
+
+/// 语义版本比较（仅数字段，v 前缀忽略；预发布后缀按忽略处理——本项目未用）
+fn is_newer_tag(remote: &str, current: &str) -> bool {
+    let parse = |s: &str| -> Vec<u64> {
+        s.trim_start_matches('v')
+            .split('.')
+            .map(|p| p.trim().chars().take_while(|c| c.is_ascii_digit()).collect::<String>().parse::<u64>().unwrap_or(0))
+            .collect()
+    };
+    let r = parse(remote);
+    let c = parse(current);
+    for i in 0..r.len().max(c.len()) {
+        let a = r.get(i).copied().unwrap_or(0);
+        let b = c.get(i).copied().unwrap_or(0);
+        if a != b {
+            return a > b;
+        }
+    }
+    false
+}
+
+/// 检查 GitHub 最新 Release（Teddysht/Vibe-TaskDeck）。
+/// 5s 超时；网络失败返回 Err（前端静默），不打扰。
+#[tauri::command]
+pub async fn check_update() -> Result<ReleaseInfo, String> {
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(5))
+        .user_agent("taskdeck-widget")
+        .build()
+        .map_err(|e| e.to_string())?;
+    let resp = client
+        .get("https://api.github.com/repos/Teddysht/Vibe-TaskDeck/releases/latest")
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+    if !resp.status().is_success() {
+        return Err(format!("github api status {}", resp.status()));
+    }
+    let json: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    let tag = json["tag_name"].as_str().unwrap_or_default().to_string();
+    if tag.is_empty() {
+        return Err("release tag missing".into());
+    }
+    let current = env!("CARGO_PKG_VERSION");
+    Ok(ReleaseInfo {
+        tag: tag.clone(),
+        name: json["name"].as_str().unwrap_or(&tag).to_string(),
+        notes: json["body"].as_str().unwrap_or_default().to_string(),
+        url: json["html_url"].as_str().unwrap_or_default().to_string(),
+        newer: is_newer_tag(&tag, current),
+    })
+}
+
+/// 打开 Release 页面（系统默认浏览器）
+#[tauri::command]
+pub async fn open_release_page(url: String) -> Result<(), String> {
+    tauri_plugin_opener::open_url(&url, None::<&str>)
+        .map_err(|e| e.to_string())
+}

@@ -1294,7 +1294,195 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .fb-newtask-submit:active { transform: scale(.98); }
 .fb-newtask-submit:disabled { opacity: .55; cursor: default; }
 
+/* ============ 设置弹窗（居中 Dialog，shadcn 口径） ============ */
+.fb-settingsbtn { position: relative }
+/* 更新可用徽标：右上角小圆点（安静提醒，不弹窗） */
+.fb-settings-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 6px;
+  height: 6px;
+  border-radius: 99px;
+  background: var(--fb-primary);
+  box-shadow: 0 0 0 2px var(--bg-canvas);   /* 与按钮底色隔开一环 */
+  pointer-events: none;
+}
+
+/* 遮罩：全屏压暗 + 轻微模糊（Dialog 层级高于 Sheet/Popover） */
+.fb-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, .55);
+  animation: fb-overlay-in 150ms ease-out;
+}
+@keyframes fb-overlay-in { from { opacity: 0 } to { opacity: 1 } }
+
+/* Dialog 面板：card 底 + border + shadow-lg；缩放浮现（起点 0.97 非物理性归零） */
+.fb-dialog {
+  width: min(420px, calc(100% - 48px));
+  max-height: min(520px, calc(100% - 64px));
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--fb-shadow-lg);
+  animation: fb-dialog-in 160ms var(--ease-out);
+  overflow: hidden;
+}
+@keyframes fb-dialog-in {
+  from { opacity: 0; transform: scale(.97) translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.fb-dialog-hd {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 12px 12px 16px;
+  border-bottom: 1px solid var(--border-subtle);
+  flex: none;
+}
+.fb-dialog-hd .t { font-size: 13.5px; font-weight: 600 }
+.fb-dialog-hd .sp { flex: 1 }
+.fb-dialog-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* 设置分组 */
+.fb-set-group { display: flex; flex-direction: column; gap: 4px }
+.fb-set-title {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--text-weak);
+  letter-spacing: .4px;
+  margin-bottom: 4px;
+}
+.fb-set-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 40px;
+}
+.fb-set-label { flex: 1; min-width: 0 }
+.fb-set-label .n { font-size: var(--font-sm); color: var(--text-primary); font-weight: 500 }
+.fb-set-label .s { font-size: var(--font-xs); color: var(--text-weak); margin-top: 1px }
+
+/* shadcn Switch：36×20 轨道 + 16 滑块；选中染 primary、滑块右移 */
+.fb-switch {
+  flex: none;
+  width: 36px;
+  height: 20px;
+  border-radius: 99px;
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface-3);
+  position: relative;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+}
+.fb-switch .knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 99px;
+  background: var(--text-primary);
+  transition: transform var(--duration-fast) var(--ease-out);
+  box-shadow: 0 1px 2px rgba(0,0,0,.3);
+}
+.fb-switch.on {
+  background: var(--fb-primary);
+  border-color: var(--fb-primary);
+}
+.fb-switch.on .knob { transform: translateX(16px); background: var(--fb-primary-foreground); }
+.fb-switch:disabled { opacity: .5; cursor: default }
+
+/* 检查更新按钮（outline 小按钮） */
+.fb-set-checkbtn {
+  flex: none;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: var(--fb-shadow-sm);
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.fb-set-checkbtn:hover { background: var(--bg-surface-2); color: var(--text-primary) }
+.fb-set-checkbtn:disabled { opacity: .55; cursor: default }
+
+/* 检查结果弱提示 */
+.fb-set-note { font-size: var(--font-xs); color: var(--text-weak); padding: 2px 0 0 }
+.fb-set-note.err { color: var(--danger-soft) }
+
+/* 新版本卡片：brand-soft 边框内嵌块（有更新时的行动区） */
+.fb-set-update {
+  margin-top: 6px;
+  border: 1px solid var(--accent-soft);
+  background: var(--accent-soft);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.fb-set-update .hd {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--accent-hover);
+}
+.fb-set-update .hd svg { width: 13px; height: 13px; flex: 0 0 auto }
+.fb-set-update .notes {
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+  line-height: 1.6;
+  white-space: pre-line;
+  max-height: 110px;
+  overflow-y: auto;
+  user-select: text;
+}
+.fb-set-goto {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--fb-primary);
+  color: var(--fb-primary-foreground);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  box-shadow: var(--fb-shadow-sm);
+  transition: filter var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+.fb-set-goto svg { width: 12px; height: 12px }
+.fb-set-goto:hover { filter: brightness(1.08) }
+.fb-set-goto:active { transform: scale(.98) }
+
 /* ---- 归档 Sheet（右侧弹窗，与详情 fb-detail 同一语言/同一响应式） ---- */
+
 .fb-archive {
   position: absolute;
   top: 0; right: 0; bottom: 0;

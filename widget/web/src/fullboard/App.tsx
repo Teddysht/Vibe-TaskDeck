@@ -3,6 +3,7 @@
  * 视图与筛选均 URL 同步（?view=list&status=…&content=…）。
  * ============================================================ */
 import { useEffect, useRef, useState } from 'react';
+import { invoke } from '../lib/tauri';
 import { loadBoardData, markOffline } from './api';
 import { useBoardEvents, useBoardPolling } from './hooks/useBoardEvents';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -13,6 +14,7 @@ import IssueListView from './list/IssueListView';
 import FilterBar from './filters/FilterBar';
 import NewTaskPopover from './panels/NewTaskPopover';
 import OtherTasksPanel from './panels/OtherTasksPanel';
+import SettingsDialog, { type ReleaseInfo } from './panels/SettingsDialog';
 import TaskContextMenu, { type MenuState } from './shared/TaskContextMenu';
 import WindowControls from './shared/WindowControls';
 import { tryGetCurrentWindow, useMaximized } from './hooks/useMaximized';
@@ -40,6 +42,12 @@ export default function App() {
     // 启动恢复视图模式
     const view = new URLSearchParams(window.location.search).get('view');
     if (view === 'list') useBoardStore.getState().setViewMode('list');
+    // 更新检查：启动静默一次（失败零感知，不打扰）；有新版点亮齿轮徽标
+    invoke<ReleaseInfo>('check_update')
+      .then((r) => {
+        if (r.newer) setRelease(r);
+      })
+      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 启动一次
   }, []);
 
@@ -54,9 +62,11 @@ export default function App() {
   // 抽屉退出两段式：closing 态跑 120ms 反向动画（CSS fb-panel-out），
   // 动画结束才真正卸载（select(null)）。时长与 .fb-detail.closing 锚定。
   const [detailClosing, setDetailClosing] = useState(false);
-  // 标题栏弹窗：新建（Popover）/ 归档（右侧 Sheet，与详情同语言）
+  // 标题栏弹窗：新建（Popover）/ 归档（右侧 Sheet，与详情同语言）/ 设置（居中 Dialog）
   const [newOpen, setNewOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [release, setRelease] = useState<ReleaseInfo | null>(null); // 新版信息（齿轮徽标）
   const newWrapRef = useRef<HTMLDivElement>(null);
   // 归档入口计数（含隐藏时的徽标）
   const tasks = useBoardStore((s) => s.tasks);
@@ -159,6 +169,15 @@ export default function App() {
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="5" rx="1" /><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9M10 13h4" /></svg>
           {archivedCount > 0 && <span className="fb-archivecount">{archivedCount}</span>}
         </button>
+        <button
+          className={`fb-headerbtn fb-settingsbtn${settingsOpen ? ' on' : ''}`}
+          title="设置"
+          aria-label="设置"
+          onClick={() => setSettingsOpen((v) => !v)}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3" /><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h.01a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h.01a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v.01a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" /></svg>
+          {release?.newer && <span className="fb-settings-dot" aria-hidden="true" />}
+        </button>
         <ThemeToggle className="wc-btn wc-theme" />
         <WindowControls />
       </header>
@@ -174,6 +193,12 @@ export default function App() {
           <TaskDetailPanel taskId={selectedId} closing={detailClosing} onClose={closeDetail} />
         )}
         <OtherTasksPanel open={archiveOpen} onClose={() => setArchiveOpen(false)} />
+        <SettingsDialog
+          open={settingsOpen}
+          onClose={() => setSettingsOpen(false)}
+          release={release}
+          onReleaseFound={setRelease}
+        />
       </div>
       {menu && (
         <TaskContextMenu
