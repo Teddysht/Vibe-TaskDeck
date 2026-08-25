@@ -1,6 +1,6 @@
 [package]
 name = "taskdeck-widget"
-version = "0.1.0"
+version = "0.2.0"
 description = "Vibe-TaskDeck 桌面挂件（置顶胶囊 + 展开面板，纯客户端直连 SQLite）"
 edition = "2021"
 rust-version = "1.88"
