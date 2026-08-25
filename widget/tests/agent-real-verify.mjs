@@ -23,6 +23,9 @@ function taskctl(args) {
     const env = { ...process.env, CODEX_THREAD_ID: THREAD_ID };
     if (!env.APPDATA && env.USERPROFILE) env.APPDATA = path.join(env.USERPROFILE, 'AppData', 'Roaming');
     if (!env.LOCALAPPDATA && env.USERPROFILE) env.LOCALAPPDATA = path.join(env.USERPROFILE, 'AppData', 'Local');
+    // 挂件按真实层约定经 taskboard.py widget 启动（数据目录 <repo>/.data）；
+    // taskctl 未显式指定时对齐同一目录，否则写入对挂件不可见（不同库）
+    if (!env.CODEX_TASKBOARD_DATA_DIR) env.CODEX_TASKBOARD_DATA_DIR = path.join(REPO, '.data');
     execFile('node', [path.join(REPO, 'cli', 'taskctl-local.mjs'), ...args], {
       timeout: 30000,
       env,
@@ -77,12 +80,13 @@ async function runChecks() {
 
   await send('Runtime.enable');
 
-  // ---- 状态复位：不依赖上一个脚本留下的视图状态（large/board/detail 均归位到 mini+list） ----
+  // ---- 状态复位：不依赖上一个脚本留下的视图状态（detail 归位、收起回 mini） ----
   await evalJs(`(() => {
-    switchView('large');
-    if (state.largeView === 'detail') closeDetail();
-    if (state.largeView === 'board') switchLargeLayout('list');
-    switchView('mini');
+    const s = __widgetStore.getState();
+    if (s.largeView === 'detail') s.closeDetail();
+    if (document.getElementById('large').style.display !== 'none') {
+      document.getElementById('collapseBtn').click();
+    }
     return 'reset';
   })()`);
   await sleep(400);
@@ -91,7 +95,7 @@ async function runChecks() {
   let discovered = null;
   for (let i = 0; i < 25 && !discovered; i++) {
     await sleep(1000);
-    discovered = await evalJs(`state.tasks.find(t => t.title === ${JSON.stringify(AGENT_TITLE)}) ? true : null`);
+    discovered = await evalJs(`__widgetStore.getState().tasks.find(t => t.title === ${JSON.stringify(AGENT_TITLE)}) ? true : null`);
   }
   check('0a 挂件轮询发现 taskctl 写入的 agent 任务（外部写入感知）', discovered === true);
 
@@ -100,9 +104,9 @@ async function runChecks() {
   }
 
   // ---- 1. L1 胶囊：轮转到该任务看徽标 ----
-  const agentIdx = await evalJs(`state.seq.findIndex(t => t.title === ${JSON.stringify(AGENT_TITLE)})`);
+  const agentIdx = await evalJs(`__widgetStore.getState().seq.findIndex(t => t.title === ${JSON.stringify(AGENT_TITLE)})`);
   if (agentIdx >= 0) {
-    await evalJs(`state.idx = ${agentIdx}; renderMini(); 'ok'`);
+    await evalJs(`__widgetStore.setState({ idx: ${agentIdx} }); 'ok'`);
     await sleep(300);
     const miniBadge = await evalJs(`(() => {
       const ag = document.querySelector('#miniMeta .ag');
@@ -111,7 +115,7 @@ async function runChecks() {
     check('1a L1 胶囊 meta 行显示 AI 徽标', miniBadge.has === true && miniBadge.text === 'AI', JSON.stringify(miniBadge));
 
     // 胶囊轮播序列含 agent 任务本身
-    const seqInfo = await evalJs(`state.seq.filter(t => t.creatorType === 'agent').map(t => t.title.slice(0, 12))`);
+    const seqInfo = await evalJs(`__widgetStore.getState().seq.filter(t => t.creatorType === 'agent').map(t => t.title.slice(0, 12))`);
     check('1b agent 任务进入胶囊轮播序列', Array.isArray(seqInfo) && seqInfo.length >= 1, JSON.stringify(seqInfo));
   } else {
     check('1a L1 胶囊（该任务不在轮播序列）', false, 'idx=-1');
@@ -145,17 +149,7 @@ async function runChecks() {
     check('3c L3 详情显示会话归属', !!detail.threadText, `"${detail.threadText}"`);
   }
 
-  // ---- 4. 看板卡片（L2 布局二） ----
-  await evalJs(`document.getElementById('dBack').click(); 'ok'`);
-  await sleep(300);
-  await evalJs(`document.getElementById('viewToggle').click(); 'ok'`);
-  await sleep(500);
-  const boardBadge = await evalJs(`(() => {
-    const card = [...document.querySelectorAll('#board .bcard')].find(c => c.textContent.includes(${JSON.stringify(AGENT_TITLE.slice(0, 10))}));
-    if (!card) return { found: false };
-    return { found: true, hasBadge: !!card.querySelector('.row1 .ag') };
-  })()`);
-  check('4a 看板卡片显示 AI 徽标', boardBadge.found === true && boardBadge.hasBadge === true, JSON.stringify(boardBadge));
+  // （原第 4 段看板卡片徽标验证随快捷看板移除而删除——多列看板由全版第二窗口承担）
 
   // ---- 5. 控制台错误 ----
   const errors = await evalJs(`window.__errCount || 0`);

@@ -1,0 +1,14 @@
+/* ==========================================================================
+   挂件（mini）样式入口 —— Tailwind v4 + 设计 token + shadcn 主题
+   --------------------------------------------------------------------------
+   层次（色值唯一来源 styles/tokens.css，hex 原样保留不转 oklch）：
+     1. tokens.css   PRIMITIVE(:root) + SEMANTIC(.dark) + 非颜色 token + reset
+     2. widget.css   自绘组件样式（迁移期原样保留，组件 JSX 复用其类名）
+     3. theme.css    shadcn 标准变量映射 + @theme（mini/fullboard 共享）
+   ⚠ 红线（透明窗口）：禁止给 body/html 加任何不透明背景
+     （shadcn 官方模板的 body{background:var(--background)} 不得引入）
+   ========================================================================== */
+@import "tailwindcss";
+@import "./styles/tokens.css";
+@import "./styles/widget.css";
+@import "./styles/theme.css";

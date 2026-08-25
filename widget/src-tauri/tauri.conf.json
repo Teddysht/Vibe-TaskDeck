@@ -4,11 +4,14 @@
   "version": "0.1.0",
   "identifier": "com.dashi.taskboard-widget",
   "build": {
-    "frontendDist": "../dist"
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:5174",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
   },
   "app": {
     "windows": [],
-    "withGlobalTauri": true,
+    "withGlobalTauri": false,
     "security": {
       "csp": null
     }

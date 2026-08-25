@@ -29,9 +29,13 @@ function run(cmd, args, opts = {}) {
 }
 
 async function main() {
-  // 找到挂件页面的 CDP target
+  // 找到挂件主窗（mini）页面的 CDP target。
+  // 注意：fullboard 第二窗口打开后 targets 有两个页面，其标题也含 'taskboard'，
+  // 必须优先精确匹配 mini.html（本套件只测主窗 UI）。
   const list = await fetch(`http://127.0.0.1:${DEBUG_PORT}/json/list`).then(r => r.json());
-  const page = list.find(t => t.type === 'page' && (t.url.includes('mini.html') || t.url.includes('index.html') || t.title.includes('taskboard')));
+  const page =
+    list.find(t => t.type === 'page' && t.url.includes('mini.html')) ||
+    list.find(t => t.type === 'page' && (t.url.includes('index.html') || t.title.includes('taskboard')));
   if (!page) {
     console.log('可用 targets:', list.map(t => `${t.type}:${t.url}`).join('\n'));
     throw new Error('未找到挂件页面 target');
@@ -71,12 +75,13 @@ async function main() {
   await send('Page.enable');
   fs.mkdirSync(SHOTS, { recursive: true });
 
-  // ---- 状态复位：不依赖上一个脚本留下的视图状态（large/board/detail 均归位到 mini+list） ----
+  // ---- 状态复位：不依赖上一个脚本留下的视图状态（detail 归位、收起回 mini） ----
   await evalJs(`(() => {
-    switchView('large');                                  // 已在 large 时为 no-op
-    if (state.largeView === 'detail') closeDetail();      // 详情覆盖层先退
-    if (state.largeView === 'board') switchLargeLayout('list');
-    switchView('mini');
+    const s = __widgetStore.getState();
+    if (s.largeView === 'detail') s.closeDetail();        // 详情覆盖层先退
+    if (document.getElementById('large').style.display !== 'none') {
+      document.getElementById('collapseBtn').click();     // large 可见时经真实交互收起
+    }
     return 'reset';
   })()`);
   await sleep(400);
@@ -87,8 +92,8 @@ async function main() {
   // ---- 1. 启动数据加载 ----
   await sleep(1000);
   const boot = await evalJs(`(() => ({
-    online: state.online,
-    taskCount: state.tasks.length,
+    online: __widgetStore.getState().online,
+    taskCount: __widgetStore.getState().tasks.length,
     offlineHidden: document.getElementById('offline').style.display === 'none' || getComputedStyle(document.getElementById('offline')).display === 'none',
     miniShown: document.getElementById('mini').style.display !== 'none',
   }))()`);
@@ -113,7 +118,7 @@ async function main() {
   await evalJs(`document.getElementById('npSubmit').click(); 'ok'`);
   await sleep(1000);
   const created = await evalJs(`(() => {
-    const t = state.tasks.find(t => t.title === ${JSON.stringify(titleOf('创建'))});
+    const t = __widgetStore.getState().tasks.find(t => t.title === ${JSON.stringify(titleOf('创建'))});
     return t ? { id: t.id, status: t.status, version: t.version } : null;
   })()`);
   check('2b 新建任务进入 state（真实 SQLite 写入）', !!created, created ? `id=${created.id} version=${created.version}` : '未找到');
@@ -128,7 +133,7 @@ async function main() {
     })()`);
     await sleep(1000);
     const moved = await evalJs(`(() => {
-      const t = state.tasks.find(t => t.id === '${createdId}');
+      const t = __widgetStore.getState().tasks.find(t => t.id === '${createdId}');
       return t ? { status: t.status, version: t.version } : null;
     })()`);
     check('3a 列表流转 todo → in_progress（真实 version 并发）', moved?.status === 'in_progress', moved ? `version=${moved.version}` : '任务丢失');
@@ -171,7 +176,7 @@ async function main() {
     })()`);
     await sleep(1000);
     const doneStatus = await evalJs(`(() => {
-      const t = state.tasks.find(t => t.id === '${createdId}');
+      const t = __widgetStore.getState().tasks.find(t => t.id === '${createdId}');
       const badge = document.getElementById('dStatus').textContent;
       const acts = document.querySelectorAll('#dAct button').length;
       return { status: t?.status, badge, acts };
@@ -189,23 +194,23 @@ async function main() {
   const conflictTest = await evalJs(`(async () => {
     try{
       // 新建 todo 任务
-      const created = await window.__TAURI__.core.invoke('create_task', { title: ${JSON.stringify(titleOf('冲突'))}, status: 'todo', priority: 'none', dueDate: null });
-      // 等 task.created 事件触发的 loadData 完成（轮询兜底前事件刷新有延迟，400ms 不够）
+      const created = await window.__TAURI_INTERNALS__.invoke('create_task', { title: ${JSON.stringify(titleOf('冲突'))}, status: 'todo', priority: 'none', dueDate: null });
+      // 等 task-created 事件触发的 loadData 完成（轮询兜底前事件刷新有延迟，400ms 不够）
       for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 200));
-        if (state.tasks.find(t => t.title === ${JSON.stringify(titleOf('冲突'))})) break;
+        if (__widgetStore.getState().tasks.find(t => t.title === ${JSON.stringify(titleOf('冲突'))})) break;
       }
-      const fresh = state.tasks.find(t => t.title === ${JSON.stringify(titleOf('冲突'))});
+      const fresh = __widgetStore.getState().tasks.find(t => t.title === ${JSON.stringify(titleOf('冲突'))});
       if (!fresh) return { step: 'find', ok: false };
       // 用过期 version=999 调 move_task → 期待 VERSION_CONFLICT → moveTask 内部重读重试成功
-      const r = await moveTask({ id: fresh.id, version: 999 }, 'in_progress');
-      // 等 moveTask 尾部 loadData 把最新状态刷进 state
+      const r = await window.__widgetApi.moveTask({ id: fresh.id, version: 999 }, 'in_progress');
+      // 等 moveTask 尾部 loadData 把最新状态刷进 store
       for (let i = 0; i < 15; i++) {
         await new Promise(r => setTimeout(r, 200));
-        const t = state.tasks.find(t => t.id === fresh.id);
+        const t = __widgetStore.getState().tasks.find(t => t.id === fresh.id);
         if (t && t.status === 'in_progress') break;
       }
-      const after = state.tasks.find(t => t.id === fresh.id);
+      const after = __widgetStore.getState().tasks.find(t => t.id === fresh.id);
       return { step: 'move', ok: after?.status === 'in_progress', status: after?.status, version: after?.version };
     }catch(e){
       return { step: 'throw', ok: false, err: String(e && (e.message || e)) };
@@ -214,9 +219,9 @@ async function main() {
   check('6a 过期 version 流转经冲突重试成功（P1-2 真机路径）', conflictTest?.ok === true, JSON.stringify(conflictTest));
 
   // ---- 7. agent 任务徽标（真实 creatorType 数据） ----
-  const agentInDb = await evalJs(`state.tasks.filter(t => t.creatorType === 'agent').length`);
+  const agentInDb = await evalJs(`__widgetStore.getState().tasks.filter(t => t.creatorType === 'agent').length`);
   const userTask = await evalJs(`(() => {
-    const t = state.tasks.find(t => t.creatorType !== 'agent');
+    const t = __widgetStore.getState().tasks.find(t => t.creatorType !== 'agent');
     if (!t) return null;
     const item = document.querySelector('#list .item[data-id="' + t.id + '"] .ag');
     return { hasBadge: !!item, title: t.title.slice(0, 20) };

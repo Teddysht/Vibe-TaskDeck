@@ -14,6 +14,17 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
+base64 = "0.22"
+
+[target.'cfg(windows)'.dependencies]
+# 左键状态查询（拖拽检测：拖拽中不做位置 clamp，保证跨屏自由拖动）
+windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse"] }
 
 [features]
-# 默认不启用任何额外 feature；transparent 在 Windows 无需 feature（macOS 才需要 macos-private-api）
+# custom-protocol：release/正式构建内嵌 frontendDist 产物（tauri 依此判定 dev=false）。
+# dev 流程（vite devUrl 热更）用 `cargo run --no-default-features` 关掉它——
+# 与 tests/README.md 真实层流程一致。
+# transparent 在 Windows 无需 feature（macOS 才需要 macos-private-api）
+default = ["custom-protocol"]
+# 转发到 tauri 依赖的 feature（tauri 依此判定 dev=false → 内嵌产物）
+custom-protocol = ["tauri/custom-protocol"]

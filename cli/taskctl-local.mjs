@@ -9,11 +9,12 @@
  *
  * 数据库路径解析与挂件 Rust 数据层一致：
  *   CODEX_TASKBOARD_DATA_DIR > %APPDATA%\dashi-taskboard\taskboard.sqlite
- * （taskboard.py 会显式设置该变量指向 <repo>/.data，与 server 模式同库互通）
+ * （taskboard.py 会显式设置该变量指向 <repo>/.data，与挂件同库互通）
  *
  * 支持子集：project list/create、issue list/get/create/update/move/archive/restore、
  * comment list/add/update/delete、context current。
- * 不支持（需 server 模式）：cloud、project map、issue relation、attachment。
+ * 不支持（纯客户端模式无 server）：cloud、project map、issue relation、attachment
+ * （relation/attachment 可经挂件全版看板详情面板操作）。
  */
 
 import { realpathSync } from "node:fs";
@@ -224,7 +225,7 @@ function execute(parsed, overrides) {
   const command = `${parsed.resource ?? ""} ${parsed.action ?? ""}`.trim();
   if (UNSUPPORTED_COMMANDS.has(command)) {
     throw new TaskctlError(
-      `Local mode does not support '${command}'. Start the server (taskboard.py start) and use the upstream taskctl.`,
+      `Local mode does not support '${command}'. The pure-client build has no server; use the widget UI (fullboard detail panel) instead.`,
       { code: "UNSUPPORTED_LOCAL", exitCode: 2 },
     );
   }

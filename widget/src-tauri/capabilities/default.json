@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "挂件窗口能力：core:default 提供 invoke 自定义 command 与事件监听；页面为内嵌资源，无需 remote 放行",
-  "windows": ["main"],
+  "windows": ["main", "fullboard"],
   "permissions": [
     "core:default",
     "allow-load-data",
@@ -10,8 +10,19 @@
     "allow-move-task",
     "allow-issue-detail",
     "allow-add-comment",
+    "allow-update-task",
+    "allow-archive-task",
+    "allow-restore-task",
+    "allow-delete-task",
+    "allow-add-label",
+    "allow-delete-label", "allow-add-relation", "allow-remove-relation", "allow-upload-attachment", "allow-read-attachment", "allow-delete-attachment",
     "allow-open-full-board",
     "allow-set-window-size",
-    "allow-close-window"
+    "allow-close-window",
+    "core:window:allow-minimize",
+    "core:window:allow-toggle-maximize",
+    "core:window:allow-is-maximized",
+    "core:window:allow-start-dragging",
+    "core:window:allow-close"
   ]
 }

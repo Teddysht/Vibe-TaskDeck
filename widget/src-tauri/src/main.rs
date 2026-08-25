@@ -4,11 +4,34 @@ mod commands;
 mod db;
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::Manager;
 
 /// 单实例锁持有的文件句柄（存为 managed state，防止提前 drop 释放锁）
 #[allow(dead_code)] // 字段仅用于持有句柄保持独占，从不读取
 struct InstanceLock(std::fs::File);
+
+/// 拖拽防抖收边状态：Moved 高频触发只记录时间戳；静止 + 左键松开
+/// （= 拖拽结束）后才执行一次 clamp。拖拽过程零干预——跨屏自由拖动。
+#[derive(Default)]
+struct MoveClamp {
+    last_moved: Mutex<Option<Instant>>,
+    armed: AtomicBool,
+}
+
+/// Windows：鼠标左键是否按住（app-region 拖拽期间为真）。
+/// 拖拽中永不 clamp，否则窗口被顶在当前屏边缘拖不过去。
+#[cfg(target_os = "windows")]
+fn drag_button_down() -> bool {
+    const VK_LBUTTON: i32 = 0x01;
+    unsafe {
+        (windows_sys::Win32::UI::Input::KeyboardAndMouse::GetAsyncKeyState(VK_LBUTTON) as u16
+            & 0x8000)
+            != 0
+    }
+}
 
 /// Windows：以独占共享模式打开锁文件；错误码 32（共享冲突）表示已有实例在运行。
 #[cfg(target_os = "windows")]
@@ -36,6 +59,17 @@ fn main() {
             commands::move_task,
             commands::issue_detail,
             commands::add_comment,
+            commands::update_task,
+            commands::archive_task,
+            commands::restore_task,
+            commands::delete_task,
+            commands::add_label,
+            commands::delete_label,
+            commands::add_relation,
+            commands::remove_relation,
+            commands::upload_attachment,
+            commands::read_attachment,
+            commands::delete_attachment,
             commands::open_full_board,
             commands::set_window_size,
             commands::close_window,
@@ -61,6 +95,7 @@ fn main() {
             // 纯客户端数据层：直连 SQLite（与 taskctl-local / server 模式共享同一库）
             let conn = db::open_database()?;
             app.manage(db::Db(std::sync::Mutex::new(conn)));
+            app.manage(MoveClamp::default());
 
             // 挂件页面为编译期内嵌资源（frontendDist → widget/dist/mini.html）
             // 默认停靠主屏右上角（胶囊挂件惯例位）：x 留 24px 边距，y 留 16px
@@ -86,13 +121,11 @@ fn main() {
                 // .transparent(false) + .background_color(#0a0b0d) + body 不透明底色。
                 .transparent(true)
                 .shadow(false);
-            // debug 构建：开 CDP 调试端口，供无头端到端验证连接（WEBVIEW2_CDP_PORT 可覆盖）
-            #[cfg(debug_assertions)]
-            {
-                if let Ok(port) = std::env::var("WEBVIEW2_CDP_PORT") {
-                    if let Ok(port) = port.trim().parse::<u16>() {
-                        builder = builder.additional_browser_args(&format!("--remote-debugging-port={port}"));
-                    }
+            // CDP 调试端口（WEBVIEW2_CDP_PORT，debug/release 均可用）：
+            // 供无头端到端验证连接真实挂件；不设时零影响。
+            if let Ok(port) = std::env::var("WEBVIEW2_CDP_PORT") {
+                if let Ok(port) = port.trim().parse::<u16>() {
+                    builder = builder.additional_browser_args(&format!("--remote-debugging-port={port}"));
                 }
             }
             builder.build()?;
@@ -102,5 +135,53 @@ fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_app_handle, _event| {});
+    app.run(|app_handle, event| {
+        // 拖拽收边（防抖 + 左键检测）：拖拽过程零干预（跨屏自由拖动）；
+        // 松手后窗口若探出屏幕边缘（Windows 允许部分越界），把窗口收回
+        // 与其重叠面积最大的显示器内。Moved 高频触发只记时间戳，静止
+        // 300ms 且左键已松开才执行一次 clamp；armed 保证同一时刻仅一条
+        // 防抖线程。尺寸切换的同步 clamp 见 commands::set_window_size。
+        if let tauri::RunEvent::WindowEvent {
+            label,
+            event: tauri::WindowEvent::Moved(_),
+            ..
+        } = event
+        {
+            if label == "main" {
+                let state = app_handle.state::<MoveClamp>();
+                *state.last_moved.lock().unwrap() = Some(Instant::now());
+                if !state.armed.swap(true, Ordering::AcqRel) {
+                    let app = app_handle.clone();
+                    std::thread::spawn(move || {
+                        if let Some(win) = app.get_webview_window("main") {
+                            let state = app.state::<MoveClamp>();
+                            let deadline = Instant::now() + Duration::from_secs(15);
+                            loop {
+                                std::thread::sleep(Duration::from_millis(100));
+                                let Some(t) = *state.last_moved.lock().unwrap() else {
+                                    break;
+                                };
+                                if Instant::now().duration_since(t) < Duration::from_millis(300) {
+                                    continue;
+                                }
+                                // 拖拽进行中（左键按住）：继续等，绝不打断
+                                #[cfg(target_os = "windows")]
+                                {
+                                    if drag_button_down() && Instant::now() < deadline {
+                                        continue;
+                                    }
+                                }
+                                commands::clamp_to_monitor(&win);
+                                break;
+                            }
+                        }
+                        // 无论哪条路径退出都复位，允许下一轮拖拽重新武装
+                        if let Some(state) = app.try_state::<MoveClamp>() {
+                            state.armed.store(false, Ordering::SeqCst);
+                        }
+                    });
+                }
+            }
+        }
+    });
 }

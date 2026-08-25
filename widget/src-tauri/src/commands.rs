@@ -10,6 +10,49 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::db::{self, Db};
 
+/// 把窗口 clamp 回「与其重叠面积最大的显示器」的工作区内（物理像素直算，
+/// 规避跨屏混合 DPI 下逻辑坐标换算漂移）。仅越界时才 set_position——界内
+/// 调用方安全。
+///
+/// 判定用重叠最大而非 current_monitor：窗口跨界（拖拽松手时探出一角）时
+/// 贴着重叠大的屏收边，移动距离最小；current_monitor 的归属判定会把窗口
+/// 整体吸入另一屏，跳变突兀。
+///
+/// 双屏探出的两个来源都靠它兜底：
+///   1. 尺寸切换（胶囊 280 → 大面板 360 宽）时 set_size 不改位置，
+///      右缘停泊的挂件展开即探出邻屏；
+///   2. app-region 拖拽越过屏幕边缘，Windows 不阻止窗口部分越界。
+pub(crate) fn clamp_to_monitor(win: &tauri::WebviewWindow) {
+    let Ok(pos) = win.outer_position() else { return };
+    let Ok(size) = win.outer_size() else { return };
+    let (x, y) = (pos.x as i64, pos.y as i64);
+    let (w, h) = (size.width as i64, size.height as i64);
+    let monitors = win.available_monitors().unwrap_or_default();
+    let best = monitors.iter().max_by_key(|m| {
+        let mp = m.position();
+        let ms = m.size();
+        let ox = (x + w).min(mp.x as i64 + ms.width as i64) - x.max(mp.x as i64);
+        let oy = (y + h).min(mp.y as i64 + ms.height as i64) - y.max(mp.y as i64);
+        ox.max(0) * oy.max(0)
+    });
+    let Some(monitor) = best else { return };
+    let area = monitor.work_area();
+    let (ax, ay, aw, ah) = (
+        area.position.x as i64,
+        area.position.y as i64,
+        area.size.width as i64,
+        area.size.height as i64,
+    );
+    // 窗口大于工作区（理论上不发生：挂件远小于屏）时对齐左上，避免反向溢出
+    let max_x = ax + (aw - w).max(0);
+    let max_y = ay + (ah - h).max(0);
+    let new_x = x.clamp(ax, max_x);
+    let new_y = y.clamp(ay, max_y);
+    if new_x != x || new_y != y {
+        let _ = win.set_position(tauri::PhysicalPosition::new(new_x as i32, new_y as i32));
+    }
+}
+
 /// 拉取挂件所需的全部数据（任务 + 项目）
 #[tauri::command]
 pub fn load_data(db: State<Db>) -> Result<serde_json::Value, db::CommandError> {
@@ -41,11 +84,12 @@ pub fn create_task(
         priority.as_deref().unwrap_or("none"),
         due_date.as_deref().filter(|s| !s.is_empty()),
     )?;
-    let _ = app.emit("task.created", ());
+    let _ = app.emit("task-created", ());
     Ok(task)
 }
 
 /// 流转任务（乐观并发：version 过期返回 VERSION_CONFLICT 由前端重试）
+/// sortOrder：全版看板拖拽落点排序（前/后卡的中值）；缺省走上游惯例
 #[tauri::command]
 pub fn move_task(
     app: AppHandle,
@@ -53,14 +97,202 @@ pub fn move_task(
     id: String,
     version: i64,
     status: String,
+    sort_order: Option<f64>,
 ) -> Result<serde_json::Value, db::CommandError> {
     let conn = db
         .0
         .lock()
         .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
-    let task = db::move_task(&conn, &id, version, &status)?;
-    let _ = app.emit("task.moved", ());
+    let task = db::move_task(&conn, &id, version, &status, sort_order)?;
+    let _ = app.emit("task-moved", ());
     Ok(task)
+}
+
+/// 更新任务属性（全版看板详情编辑底座；活动流 diff 由 db 层计算）
+#[tauri::command]
+pub fn update_task(
+    app: AppHandle,
+    db: State<Db>,
+    id: String,
+    version: i64,
+    changes: serde_json::Value,
+) -> Result<serde_json::Value, db::CommandError> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
+    let task = db::update_task(&conn, &id, version, &changes)?;
+    let _ = app.emit("task-updated", serde_json::json!({ "taskId": id }));
+    Ok(task)
+}
+
+/// 归档任务（全版看板 OtherTasksPanel）
+#[tauri::command]
+pub fn archive_task(
+    app: AppHandle,
+    db: State<Db>,
+    id: String,
+    version: i64,
+) -> Result<serde_json::Value, db::CommandError> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
+    let task = db::archive_task(&conn, &id, version)?;
+    let _ = app.emit("task-archived", serde_json::json!({ "taskId": id }));
+    Ok(task)
+}
+
+/// 恢复归档任务
+#[tauri::command]
+pub fn restore_task(
+    app: AppHandle,
+    db: State<Db>,
+    id: String,
+    version: i64,
+) -> Result<serde_json::Value, db::CommandError> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
+    let task = db::restore_task(&conn, &id, version)?;
+    let _ = app.emit("task-restored", serde_json::json!({ "taskId": id }));
+    Ok(task)
+}
+
+/// 删除已归档任务（级联评论/活动/关联/附件；磁盘附件由 db 层清理）
+#[tauri::command]
+pub fn delete_task(
+    app: AppHandle,
+    db: State<Db>,
+    id: String,
+    version: i64,
+) -> Result<serde_json::Value, db::CommandError> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
+    let result = db::delete_task(&conn, &id, version)?;
+    let _ = app.emit("task-deleted", serde_json::json!({ "taskId": id }));
+    Ok(result)
+}
+
+/// 标签库新增（projects.labels JSON）
+#[tauri::command]
+pub fn add_label(
+    app: AppHandle,
+    db: State<Db>,
+    project_id: String,
+    label: String,
+) -> Result<serde_json::Value, db::CommandError> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
+    let result = db::add_project_label(&conn, &project_id, &label)?;
+    let _ = app.emit("labels-updated", serde_json::json!({ "projectId": project_id }));
+    Ok(result)
+}
+
+/// 标签库删除（并从该标签所属任务的 labels 移除）
+#[tauri::command]
+pub fn delete_label(
+    app: AppHandle,
+    db: State<Db>,
+    project_id: String,
+    label: String,
+) -> Result<serde_json::Value, db::CommandError> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
+    let result = db::delete_project_label(&conn, &project_id, &label)?;
+    let _ = app.emit("labels-updated", serde_json::json!({ "projectId": project_id }));
+    Ok(result)
+}
+
+/// 添加任务关联（type: parent/blocks/blocked_by/related）
+#[tauri::command]
+pub fn add_relation(
+    app: AppHandle,
+    db: State<Db>,
+    id: String,
+    version: i64,
+    relation_type: String,
+    related_task_id: String,
+) -> Result<serde_json::Value, db::CommandError> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
+    let result = db::add_relation(&conn, &id, version, &relation_type, &related_task_id)?;
+    let _ = app.emit("relation-updated", serde_json::json!({ "taskId": id }));
+    Ok(result)
+}
+
+/// 移除任务关联
+#[tauri::command]
+pub fn remove_relation(
+    app: AppHandle,
+    db: State<Db>,
+    id: String,
+    version: i64,
+    relation_type: String,
+    related_task_id: String,
+) -> Result<serde_json::Value, db::CommandError> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
+    let result = db::remove_relation(&conn, &id, version, &relation_type, &related_task_id)?;
+    let _ = app.emit("relation-updated", serde_json::json!({ "taskId": id }));
+    Ok(result)
+}
+
+/// 上传附件（base64 内容；≤10MB；磁盘 UUID 文件名）
+#[tauri::command]
+pub fn upload_attachment(
+    app: AppHandle,
+    db: State<Db>,
+    task_id: String,
+    comment_id: Option<String>,
+    filename: String,
+    content_type: String,
+    base64_data: String,
+) -> Result<serde_json::Value, db::CommandError> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
+    let result = db::upload_attachment(&conn, &task_id, comment_id.as_deref(), &filename, &content_type, &base64_data)?;
+    let _ = app.emit("task-updated", serde_json::json!({ "taskId": task_id }));
+    Ok(result)
+}
+
+/// 读取附件内容（base64 返回）
+#[tauri::command]
+pub fn read_attachment(
+    db: State<Db>,
+    id: String,
+) -> Result<serde_json::Value, db::CommandError> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
+    db::read_attachment(&conn, &id)
+}
+
+/// 删除附件（DB 行 + 磁盘文件）
+#[tauri::command]
+pub fn delete_attachment(
+    db: State<Db>,
+    id: String,
+) -> Result<serde_json::Value, db::CommandError> {
+    let conn = db
+        .0
+        .lock()
+        .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
+    db::delete_attachment(&conn, &id)
 }
 
 /// 任务详情（L3-本机：task 全字段 + 评论 + 活动流一次返回）
@@ -89,167 +321,102 @@ pub fn add_comment(
         .lock()
         .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
     let comment = db::add_comment(&conn, &task_id, &body)?;
-    let _ = app.emit("task.comment", ());
+    let _ = app.emit("task-comment", ());
     Ok(comment)
 }
 
-/// L3-全版入口：拉起 server 模式 + 打开第二窗口内嵌看板。
+/// 全版看板入口：打开（或聚焦）本地页面第二窗口。
 ///
-/// 进程管理归属：不直接 spawn Node，而是调用 skill/taskboard.py start
-/// （幂等复用、PID 记录到 state.json、可达性等待都由 Python wrapper 负责，
-/// stop/clean 语义保持单一属主）。本命令只做：解析仓库根 → 调 wrapper →
-/// 成功后开 fullboard 窗口。
+/// 纯客户端架构：全版看板与挂件同栈（dist/fullboard.html，经 Vite 双通道
+/// 构建内嵌），直接 invoke 同一批 Rust command 读写 SQLite——不再拉起
+/// Node server（旧 taskboard.py/upstream External-URL 链路已整体移除）。
 #[tauri::command]
 pub async fn open_full_board(app: AppHandle) -> Result<serde_json::Value, db::CommandError> {
-    // 仓库根：从 exe 所在目录逐级向上查找含 skill/taskboard.py 与 upstream/ 的目录
-    // （exe 嵌套层级可能因 target/profile 变化，不硬编码层级数）
-    let repo_root = std::env::current_exe()
-        .ok()
-        .and_then(|p| p.parent().map(|p| p.to_path_buf()))
-        .and_then(|start| {
-            let mut cur = Some(start);
-            while let Some(dir) = cur {
-                if dir.join("skill").join("taskboard.py").is_file()
-                    && dir.join("upstream").is_dir()
-                {
-                    return Some(dir);
-                }
-                cur = dir.parent().map(|p| p.to_path_buf());
-            }
-            None
-        })
-        .ok_or_else(|| db::CommandError {
-            code: "FULLBOARD_UNAVAILABLE",
-            message: "未找到仓库根目录（需含 skill/taskboard.py 与 upstream/；全版看板依赖 upstream 源码 + Node 22.5+）".into(),
-        })?;
-    let script = repo_root.join("skill").join("taskboard.py");
-    let source = repo_root.join("upstream");
-
-    // 调 wrapper（阻塞等待就绪，默认超时 20s；--json 便于解析 url）
-    // 用 tauri::async_runtime 的进程执行（Tauri 内置 tokio，无需额外依赖）。
-    // CREATE_NO_WINDOW：挂件是 GUI 程序无控制台，python 是 console 程序，
-    // 不加此标志 Windows 会弹出「Python」控制台黑窗（node 孙进程还会继承持有）。
-    let output = tauri::async_runtime::spawn_blocking(move || {
-        let mut command = std::process::Command::new("python");
-        command
-            .arg(&script)
-            .arg("--source")
-            .arg(&source)
-            .arg("--json")
-            .arg("start");
-        #[cfg(target_os = "windows")]
-        {
-            use std::os::windows::process::CommandExt;
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            command.creation_flags(CREATE_NO_WINDOW);
-        }
-        command.output()
-    })
-    .await
-    .map_err(|e| db::CommandError {
-        code: "FULLBOARD_ERROR",
-        message: format!("内部任务失败：{e}"),
-    })?
-    .map_err(|e| db::CommandError {
-        code: "FULLBOARD_UNAVAILABLE",
-        message: format!("调用 taskboard.py 失败：{e}"),
-    })?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    // stdout 可能混入非 JSON 行（如 node 实验警告），先试整体解析，失败则取最后一个 { 之后的部分
-    let payload: serde_json::Value = serde_json::from_str(stdout.trim())
-        .or_else(|_| {
-            let start = stdout.rfind('{');
-            match start {
-                Some(s) => serde_json::from_str(stdout[s..].trim_end()),
-                None => Err(serde_json::from_str::<serde_json::Value>("").unwrap_err()),
-            }
-        })
-        .map_err(|_| db::CommandError {
-            code: "FULLBOARD_ERROR",
-            message: format!(
-                "无法解析 taskboard.py 输出：{}",
-                stdout.trim().chars().take(200).collect::<String>()
-            ),
-        })?;
-    if payload.get("ok").and_then(|v| v.as_bool()) != Some(true) {
-        let error = payload.get("error").and_then(|v| v.as_str()).unwrap_or("未知错误");
-        return Err(db::CommandError {
-            code: "FULLBOARD_UNAVAILABLE",
-            message: format!("server 启动失败：{error}"),
-        });
-    }
-    let url = payload
-        .get("url")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| db::CommandError {
-            code: "FULLBOARD_ERROR",
-            message: "taskboard.py 未返回 url".into(),
-        })?
-        .to_string();
-
-    // 第二窗口：有装饰、可调整大小（全版看板需要大窗口交互）
     // 已开时聚焦即可（WebviewWindowBuilder 同 label 会冲突）
     if let Some(existing) = app.get_webview_window("fullboard") {
         let _ = existing.set_focus();
-    } else {
-        // ?host=codex 激活上游 embedded 模式：隐藏侧栏（单列全宽）、
-        // 拖拽区、紧凑样式——为 iframe 宿主设计的整套适配，Tauri 第二窗口
-        // 同样适用。上游只读，不改其源码，仅通过 URL 参数选择模式。
-        let embedded_url = if url.contains('?') {
-            format!("{url}&host=codex")
-        } else {
-            format!("{url}?host=codex")
-        };
-        // async command 跑在 tokio worker 线程；Windows 上窗口创建必须在
-        // 主线程（否则 build 静默不产窗）。通过 channel 取回主线程结果。
-        let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
-        let app_for_thread = app.clone();
-        app.run_on_main_thread(move || {
-            let result = tauri::WebviewWindowBuilder::new(
-                &app_for_thread,
-                "fullboard",
-                tauri::WebviewUrl::External(embedded_url.parse().unwrap()),
-            )
-            .title("dashi-taskboard 全版看板")
-            .inner_size(1280.0, 800.0)
-            .center()
-            // 独立 user-data-dir：第二个 WebView 复用主窗口数据目录时会在
-            // 部分 WebView2 版本上静默失败（build 返回 Ok 但窗口不出现，151 实测）
-            .data_directory(
-                std::env::var("LOCALAPPDATA")
-                    .map(|d| std::path::PathBuf::from(d).join("com.dashi.taskboard-widget").join("fullboard-data"))
-                    .unwrap_or_default(),
-            )
-            // embedded 单列布局无 840px 断点保护，窗口过窄时看板列会挤压；
-            // 下限收到 embedded 可用宽度（侧栏已隐藏，主区即全部）
-            .min_inner_size(900.0, 520.0)
-            .build()
-            .map(|_| ())
-            .map_err(|e| format!("创建全版窗口失败：{e}"));
-            let _ = tx.send(result);
-        })
+        return Ok(serde_json::json!({ "ok": true }));
+    }
+    // async command 跑在 tokio worker 线程；Windows 上窗口创建必须在
+    // 主线程（否则 build 静默不产窗）。通过 channel 取回主线程结果。
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    let app_for_thread = app.clone();
+    app.run_on_main_thread(move || {
+        let mut builder = tauri::WebviewWindowBuilder::new(
+            &app_for_thread,
+            "fullboard",
+            tauri::WebviewUrl::App("fullboard.html".into()),
+        )
+        .title("dashi-taskboard 全版看板")
+        .inner_size(1280.0, 800.0)
+        .center()
+        .min_inner_size(900.0, 520.0)
+        // 无边框 + 自绘标题栏：与挂件主窗（decorations(false)）同一窗口语言，
+        // 避免系统亮色标题栏与暗色 UI 的割裂。shadow(true) 保留 DWM 窗口阴影
+        // （Windows 无框窗口默认丢阴影）；标题栏拖拽/最大化/关闭由前端实现。
+        .decorations(false)
+        .shadow(true);
+        // WebView2 限制：同进程内所有环境的 additional_browser_arguments 必须
+        // 完全一致。主窗在 WEBVIEW2_CDP_PORT 下设了 --remote-debugging-port，
+        // 本窗口必须带同样参数，否则环境创建失败（窗口假死消失，实测）。
+        if let Ok(port) = std::env::var("WEBVIEW2_CDP_PORT") {
+            if let Ok(port) = port.trim().parse::<u16>() {
+                builder = builder.additional_browser_args(&format!("--remote-debugging-port={port}"));
+            }
+        }
+        // 共享主窗口 WebView2 环境（默认，App URL 实测 151 版本无 External URL
+        // 时代的「复用数据目录静默不产窗」问题）：两窗口同一 browser process，
+        // CDP 调试端口（WEBVIEW2_CDP_PORT）天然覆盖两窗口，事件/IPC 行为一致。
+        // 回退开关 TASKBOARD_FULLBOARD_ISOLATED_DATA=1：改用独立 user-data-dir
+        // （注意 WebView2 限制——同进程多环境的 additional_browser_arguments
+        // 必须一致，主窗带 CDP 参数而本窗口不带时独立环境创建会失败）。
+        if std::env::var("TASKBOARD_FULLBOARD_ISOLATED_DATA").ok().as_deref() == Some("1") {
+            if let Ok(local) = std::env::var("LOCALAPPDATA") {
+                builder = builder.data_directory(
+                    std::path::PathBuf::from(local)
+                        .join("com.dashi.taskboard-widget")
+                        .join("fullboard-data"),
+                );
+            }
+        }
+        // ⚠ 闭包内只做 build：unminimize/show/set_focus 等窗口方法走 wry 的
+        // 消息泵（send_user_message 等主线程处理），在主线程闭包内调用等于
+        // 自己等自己——webview IPC 从此无响应（实测「failed to receive
+        // message from webview」），窗口假死消失。置前操作移到闭包外。
+        let result = builder.build().map(|_| ()).map_err(|e| format!("创建全版窗口失败：{e}"));
+        let _ = tx.send(result);
+    })
+    .map_err(|e| db::CommandError {
+        code: "FULLBOARD_ERROR",
+        message: format!("主线程调度失败：{e}"),
+    })?;
+    rx.recv()
+        .map_err(|_| db::CommandError {
+            code: "FULLBOARD_ERROR",
+            message: "全版窗口创建结果未返回".into(),
+        })?
         .map_err(|e| db::CommandError {
             code: "FULLBOARD_ERROR",
-            message: format!("主线程调度失败：{e}"),
+            message: e,
         })?;
-        rx.recv()
-            .map_err(|_| db::CommandError {
-                code: "FULLBOARD_ERROR",
-                message: "全版窗口创建结果未返回".into(),
-            })?
-            .map_err(|e| db::CommandError {
-                code: "FULLBOARD_ERROR",
-                message: e,
-            })?;
+    // 置前恢复（async 线程调用，Tauri API 线程安全）：主窗为 always-on-top
+    // 工具窗时，第二窗口创建后可能落在最小化位（-32000），显式恢复确保可见。
+    if let Some(win) = app.get_webview_window("fullboard") {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
     }
-    Ok(serde_json::json!({ "ok": true, "url": url }))
+    Ok(serde_json::json!({ "ok": true }))
 }
 
-/// 调整挂件窗口尺寸（供前端两级切换调用）
+/// 调整挂件窗口尺寸（供前端两级切换调用）。
+/// 尺寸变化后 clamp 位置：胶囊(280)→大面板(360) 变宽时右缘停泊的挂件
+/// 会探出屏幕边缘（邻屏时跨屏），clamp 保持完整落在当前显示器内。
 #[tauri::command]
 pub fn set_window_size(app: AppHandle, w: f64, h: f64) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.set_size(tauri::LogicalSize::new(w, h));
+        clamp_to_monitor(&win);
     }
 }
 

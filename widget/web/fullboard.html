@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dashi-taskboard 全版看板</title>
+<!-- THEME-BOOT：同步防闪脚本——与 mini.html / lib/theme.ts 同逻辑 -->
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem('taskboard-theme');
+    var mode = saved === 'light' || saved === 'dark'
+      ? saved
+      : (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    document.documentElement.className = mode;
+  } catch (e) { /* 默认 dark 已写在 html class 上 */ }
+})();
+</script>
+<script type="module" src="/src/fullboard/main.tsx"></script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

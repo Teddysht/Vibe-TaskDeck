@@ -2,17 +2,22 @@
    DESIGN TOKENS —— 换风格只改这个文件，组件样式（widget.css）零硬编码颜色
    --------------------------------------------------------------------------
    三层结构：
-     1. PRIMITIVE   原始色板（中性灰阶 / 品牌强调 / 语义色）
-     2. SEMANTIC    语义映射（背景 / 文字 / 边框 / 强调用途 / 状态）
+     1. PRIMITIVE   原始色板（中性灰阶 / 品牌强调 / 语义色）→ :root
+     2. SEMANTIC    语义映射（背景 / 文字 / 边框 / 强调用途 / 状态）→ .dark
      3. 组件        只引用 SEMANTIC 变量，不引用 PRIMITIVE
+   --------------------------------------------------------------------------
+   主题结构（shadcn 双主题约定）：
+     · 挂件默认暗色：mini.html 写死 <html class="dark">，无闪烁
+     · 加亮色主题：新增 .light（或在 :root 落亮色 SEMANTIC 映射），
+       html 上的 class 由将来的主题偏好逻辑切换
    --------------------------------------------------------------------------
    换风格方式：
      · 微调配色 → 只改 PRIMITIVE 色板值
-     · 换整套主题（如浅色）→ 追加 [data-theme="light"] 覆盖 SEMANTIC 映射
+     · 换整套主题 → 覆盖对应主题 class 下的 SEMANTIC 映射
      · 换圆角/间距/字号风格 → 改第 3 段非颜色 token
    ========================================================================== */
 :root{
-  /* ---- 1. PRIMITIVE · 中性灰阶 ---- */
+  /* ---- 1. PRIMITIVE · 中性灰阶（暗色主题的原始值；亮色经 .light 覆写同名变量） ---- */
   --gray-0:#0a0b0d;   /* 最深（canvas） */
   --gray-1:#141518;   /* 面板 */
   --gray-2:#1b1d22;   /* 次级面板 / hover */
@@ -24,8 +29,8 @@
   --gray-8:#e9eaec;   /* 主文字 */
   --gray-9:#ffffff;   /* 反白文字 */
 
-  /* ---- PRIMITIVE · 品牌强调（换风格主要换这个） ---- */
-  --brand-400:#8fa2ff;  /* hover / 亮 */
+  /* ---- PRIMITIVE · 品牌强调（双主题共用，亮色下 hover/active 交换深浅方向） ---- */
+  --brand-400:#8fa2ff;  /* hover / 亮（暗色主题用） */
   --brand-500:#6e8bff;  /* 主强调 */
   --brand-600:#4a63d6;  /* active / 深 */
 
@@ -33,33 +38,6 @@
   --red-400:#ff8a84;    /* 危险·浅 */
   --red-500:#ef5046;    /* 危险 */
   --green-500:#3fb877;  /* 成功 */
-
-  /* ---- 2. SEMANTIC · 背景层次 ---- */
-  --bg-canvas:var(--gray-0);
-  --bg-surface:var(--gray-1);
-  --bg-surface-2:var(--gray-2);
-  --bg-surface-3:var(--gray-3);
-
-  /* ---- SEMANTIC · 文字层次 ---- */
-  --text-primary:var(--gray-8);
-  --text-secondary:var(--gray-7);
-  --text-weak:var(--gray-6);
-  --text-inverse:var(--gray-9);
-
-  /* ---- SEMANTIC · 边框 ---- */
-  --border-subtle:var(--gray-4);
-  --border-strong:var(--gray-5);
-  --border-hover:#4a4f5c;   /* hover 时更亮的边框 */
-
-  /* ---- SEMANTIC · 强调与状态 ---- */
-  --accent:var(--brand-500);
-  --accent-hover:var(--brand-400);
-  --accent-active:var(--brand-600);
-  --accent-soft:rgba(110,139,255,.12);   /* 强调色低透明底（徽标） */
-  --danger:var(--red-500);
-  --danger-soft:var(--red-400);
-  --danger-bg:rgba(239,80,70,.12);       /* 危险低透明底 */
-  --success:var(--green-500);
 
   /* ---- 3. 非颜色 token ---- */
   /* 圆角 */
@@ -93,20 +71,138 @@
   --ease-out:cubic-bezier(.16,1,.3,1);
 }
 
+/* ---- 2. SEMANTIC（暗色主题，默认）----
+   html.dark 常驻；亮色主题见下方 .light 块（PRIMITIVE+SEMANTIC 同批覆写） */
+.dark{
+  color-scheme: dark;                     /* 原生控件（表单/滚动条 UA 部分）随主题 */
+  /* 背景层次 */
+  --bg-canvas:var(--gray-0);
+  --bg-surface:var(--gray-1);
+  --bg-surface-2:var(--gray-2);
+  --bg-surface-3:var(--gray-3);
+
+  /* 文字层次 */
+  --text-primary:var(--gray-8);
+  --text-secondary:var(--gray-7);
+  --text-weak:var(--gray-6);
+  --text-inverse:var(--gray-9);
+
+  /* 边框 */
+  --border-subtle:var(--gray-4);
+  --border-strong:var(--gray-5);
+  --border-hover:#4a4f5c;   /* hover 时更亮的边框 */
+
+  /* 强调与状态 */
+  --accent:var(--brand-500);
+  --accent-hover:var(--brand-400);
+  --accent-active:var(--brand-600);
+  --accent-soft:rgba(110,139,255,.12);   /* 强调色低透明底（徽标） */
+  --danger:var(--red-500);
+  --danger-soft:var(--red-400);
+  --danger-bg:rgba(239,80,70,.12);       /* 危险低透明底 */
+  --success:var(--green-500);
+
+  /* 滚动条（三端统一：细窄、透明轨道、圆角 thumb） */
+  --scrollbar-thumb:var(--gray-3);
+  --scrollbar-thumb-hover:var(--gray-5);
+}
+
+/* ---- SEMANTIC（亮色主题）----
+   PRIMITIVE 灰阶同步反转（canvas 最浅、面板纯白），品牌蓝紫保留但换
+   深浅方向：主强调取 brand-600（白字对比 5.5:1，小字 AA），hover 更深。
+   语义色加深一档保证白底可读。 */
+.light{
+  color-scheme: light;
+
+  /* PRIMITIVE · 亮色灰阶 */
+  --gray-0:#f5f6f8;   /* canvas（最浅） */
+  --gray-1:#ffffff;   /* 面板（纯白） */
+  --gray-2:#f0f1f4;   /* 次级面板 / hover */
+  --gray-3:#e7e9ee;   /* 按钮 / 更深一层 */
+  --gray-4:#e2e4ea;   /* 细边框 */
+  --gray-5:#c9ccd6;   /* 边框高亮 */
+  --gray-6:#6b7078;   /* 弱文字（对白 4.9:1，满足小字 AA） */
+  --gray-7:#494e57;   /* 次级文字 */
+  --gray-8:#1c1e24;   /* 主文字 */
+  --gray-9:#ffffff;   /* 反白文字（primary 按钮上） */
+
+  /* 背景层次 */
+  --bg-canvas:var(--gray-0);
+  --bg-surface:var(--gray-1);
+  --bg-surface-2:var(--gray-2);
+  --bg-surface-3:var(--gray-3);
+
+  /* 文字层次 */
+  --text-primary:var(--gray-8);
+  --text-secondary:var(--gray-7);
+  --text-weak:var(--gray-6);
+  --text-inverse:var(--gray-9);
+
+  /* 边框 */
+  --border-subtle:var(--gray-4);
+  --border-strong:var(--gray-5);
+  --border-hover:#aab0bd;
+
+  /* 强调与状态（蓝紫品牌保留：亮色下取深侧保证白底对比） */
+  --accent:var(--brand-600);
+  --accent-hover:#3d55c4;                 /* hover 比主强调再深一档 */
+  --accent-active:var(--brand-500);
+  --accent-soft:rgba(74,99,214,.10);
+  --danger:#d64541;
+  --danger-soft:#c73b37;
+  --danger-bg:rgba(214,69,65,.10);
+  --success:#2f9e63;
+
+  /* 滚动条 */
+  --scrollbar-thumb:var(--gray-3);
+  --scrollbar-thumb-hover:var(--gray-5);
+
+  /* 阴影（亮色下减淡） */
+  --shadow-float:0 10px 30px rgba(23,26,33,.14),0 2px 8px rgba(23,26,33,.10);
+}
+
 /* ==========================================================================
    基础（reset + 全局）
+   红线（Tauri 透明窗口，勿被任何框架模板覆盖）：
+     · body 背景必须 transparent——圆角靠透明窗口 + 容器自身 border-radius 裁剪
+     · user-select:none / -webkit-app-region 见 widget.css
    ========================================================================== */
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden}
+#root{height:100%}                     /* React 挂载容器补齐 100% 链（旧版 .mini/.large 直接挂 body） */
 body{
   font-family:var(--font-family);
   background:transparent;               /* 透明窗口：底色由 .mini/.large 自己承担，圆角才能透出 */
   color:var(--text-primary);
+  line-height:normal;                   /* 撤销 Tailwind preflight 的 1.5（旧版未设行高的元素继承 normal） */
   -webkit-font-smoothing:antialiased;
   text-rendering:optimizeLegibility;
   user-select:none;
 }
 svg{display:block}
+
+/* ==========================================================================
+   通用 toast（三端共享组件样式；原在 widget.css，fullboard 端此前缺失）
+   ========================================================================== */
+#toast{position:fixed;left:50%;bottom:56px;transform:translateX(-50%) translateY(6px);max-width:82%;padding:7px 14px;border-radius:var(--radius-md);background:var(--bg-surface-3);border:1px solid var(--border-strong);color:var(--text-primary);font-size:var(--font-sm);line-height:1.4;z-index:20;opacity:0;pointer-events:none;transition:opacity var(--duration-base) var(--ease-out),transform var(--duration-base) var(--ease-out);box-shadow:0 4px 16px rgba(0,0,0,.4);overflow-wrap:anywhere}
+#toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+#toast.error{color:var(--danger-soft);border-color:var(--danger-bg)}
+
+/* ==========================================================================
+   滚动条（三端统一）—— WebView2 默认亮色粗滚动条与暗色 UI 割裂，全部重绘。
+   语义变量 --scrollbar-thumb 在 .dark/.light 各自定义；滚动容器只需继承。
+   ========================================================================== */
+*::-webkit-scrollbar{width:8px;height:8px}
+*::-webkit-scrollbar-track{background:transparent}
+*::-webkit-scrollbar-corner{background:transparent}
+*::-webkit-scrollbar-thumb{
+  background:var(--scrollbar-thumb);
+  border-radius:99px;
+  border:2px solid transparent;          /* 内缩视觉：thumb 比轨道细 4px */
+  background-clip:padding-box;
+}
+*::-webkit-scrollbar-thumb:hover{background:var(--scrollbar-thumb-hover);background-clip:padding-box}
+*::-webkit-scrollbar-thumb:active{background:var(--scrollbar-thumb-hover);background-clip:padding-box}
 
 /* ==========================================================================
    动效豁免：前庭敏感用户降级（保留 opacity 反馈，去除位移与闪烁）

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>dashi-taskboard 挂件</title>
+<!-- THEME-BOOT：同步防闪脚本——React 加载前解析主题（localStorage >
+     prefers-color-scheme > dark），逻辑与 lib/theme.ts 一致 -->
+<script>
+(function () {
+  try {
+    var saved = localStorage.getItem('taskboard-theme');
+    var mode = saved === 'light' || saved === 'dark'
+      ? saved
+      : (window.matchMedia && matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    document.documentElement.className = mode;
+  } catch (e) { /* 默认 dark 已写在 html class 上 */ }
+})();
+</script>
+<script type="module" src="/src/main.tsx"></script>
+</head>
+<body>
+  <div id="root"></div>
+</body>
+</html>

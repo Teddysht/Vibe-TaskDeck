@@ -20,32 +20,35 @@ const OUT = path.resolve('.out', 'p2-detail-verify-result.json');
 const SHOT = path.resolve('.out', 'p2-shot-detail.png');
 
 const MOCK_JS = `
+// 颜色/对比度断言锁定暗色主题（防 headless Chrome 默认 prefers-light 触发亮色映射）
+try { localStorage.setItem('taskboard-theme', 'dark'); } catch (e) {} // THEME-BOOT 内联脚本读到 dark（注入期 documentElement 可能为 null，勿在此直接设 className）
+
 window.__MOCK__ = { tasks: [
   { id: 'T-2', title: '待办甲', identifier: 'TSK-2', status: 'todo',        priority: 'high', dueDate: null, version: 1 },
   { id: 'T-4', title: '进行中项', identifier: 'TSK-4', status: 'in_progress', priority: 'none', dueDate: null, version: 1 },
   { id: 'T-6', title: '被阻塞项', identifier: 'TSK-6', status: 'blocked',    priority: 'none', dueDate: null, version: 1 },
   { id: 'T-7', title: '已完成项', identifier: 'TSK-7', status: 'done',       priority: 'none', dueDate: null, version: 1 },
 ]};
-window.__TAURI__ = {
-  core: {
-    invoke(cmd, args) {
-      if (cmd === 'load_data') return Promise.resolve({ tasks: window.__MOCK__.tasks, projects: [{ id: 'local', name: '本地' }] });
-      if (cmd === 'issue_detail') {
-        const t = window.__MOCK__.tasks.find(t => t.id === args.id);
-        if (!t) return Promise.reject({ code: 'TASK_NOT_FOUND', message: 'gone' });
-        return Promise.resolve({ task: { ...t }, comments: [], activities: [] });
-      }
-      if (cmd === 'move_task') {
-        const t = window.__MOCK__.tasks.find(t => t.id === args.id);
-        if (!t) return Promise.reject({ code: 'TASK_NOT_FOUND', message: 'gone' });
-        if (t.version !== args.version) return Promise.reject({ code: 'VERSION_CONFLICT', message: 'conflict (mock)' });
-        t.status = args.status; t.version += 1;
-        return Promise.resolve({ ...t });
-      }
-      return Promise.resolve({});
-    },
+window.__TAURI_INTERNALS__ = {
+  invoke(cmd, args) {
+    if (cmd === 'plugin:event|listen') return Promise.resolve(1);
+    if (cmd === 'plugin:event|unlisten') return Promise.resolve();
+    if (cmd === 'load_data') return Promise.resolve({ tasks: window.__MOCK__.tasks, projects: [{ id: 'local', name: '本地' }] });
+    if (cmd === 'issue_detail') {
+      const t = window.__MOCK__.tasks.find(t => t.id === args.id);
+      if (!t) return Promise.reject({ code: 'TASK_NOT_FOUND', message: 'gone' });
+      return Promise.resolve({ task: { ...t }, comments: [], activities: [] });
+    }
+    if (cmd === 'move_task') {
+      const t = window.__MOCK__.tasks.find(t => t.id === args.id);
+      if (!t) return Promise.reject({ code: 'TASK_NOT_FOUND', message: 'gone' });
+      if (t.version !== args.version) return Promise.reject({ code: 'VERSION_CONFLICT', message: 'conflict (mock)' });
+      t.status = args.status; t.version += 1;
+      return Promise.resolve({ ...t });
+    }
+    return Promise.resolve({});
   },
-  event: { listen: () => Promise.resolve(() => {}) },
+  transformCallback: () => 0,
 };
 `;
 

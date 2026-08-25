@@ -22,25 +22,23 @@ dashi-taskboard 的本地化封装与增强。让任务追踪成为 AI 工作流
 
 ## Operating Context
 
-- **运行形态**：Windows 桌面（Tauri 2 置顶无边框挂件，280×48 胶囊 ↔ 360×520 面板 ↔ 详情/评论 三级），日常无 Node 服务、无端口、无浏览器。
-- **三级信息架构**（安静 → 召唤 → 深潜，2026-08-24 拍板）：L1 胶囊（常驻扫一眼）→ L2 挂件面板（列表/新建/流转）→ L3 深看。L3 双轨：
+- **运行形态**：Windows 桌面（Tauri 2 置顶无边框挂件，280×48 胶囊 ↔ 360×520 面板 ↔ 全版看板第二窗口），日常无 Node 服务、无端口、无浏览器。
+- **三级信息架构**（安静 → 召唤 → 深潜）：L1 胶囊（常驻扫一眼）→ L2 挂件面板（列表/新建/流转）→ L3 深看。L3 双轨：
   - **L3-本机（零依赖，主路径）**：挂件面板内做任务详情 + 评论（数据全在 SQLite，Rust 直连）——单机用户"深看"闭环，不依赖任何服务；
-  - **L3-全版（依赖 Node，后手）**：挂件"全版看板"入口 → 自动拉起 server（经 taskboard.py，进程属主不分裂）+ **Tauri 第二窗口内嵌**（1280×800 可缩放）；Node/源码缺失时挂件内 toast 降级提示。**已实现**（2026-08-24，代码链路验证通过）。
-- **三种模式**：① 纯客户端（挂件 Rust 直连 SQLite + taskctl Node 直连，同库 WAL 并发）——**单机全功能是承诺**；② server 模式（**降级定位**：云端登录 companion + 上游能力超集/全版看板的访问层，个人日常不依赖）；③ 云端模式（Cloudflare Workers + D1，团队共享正解）。
-- **数据**：单一 `taskboard.sqlite`，三模式同库互通；`CODEX_TASKBOARD_DATA_DIR` 决定位置（默认 `<repo>/.data`）。
+  - **L3-全版（零依赖，已自研）**：挂件"全版看板"入口 → **Tauri 第二窗口加载本地内嵌页面**（dist/fullboard.html，与挂件同栈 React + Rust 直连 SQLite，秒开）。七列看板拖拽、详情编辑（Markdown/标签/关联/附件）、筛选搜索、列表视图、归档面板、undo。**已实现**（2026-08-25，自研替代旧 Node+upstream 内嵌链路，后者已彻底切断）。
+- **纯客户端模式**（挂件 Rust 直连 SQLite + taskctl Node 直连，同库 WAL 并发）——**单机全功能是承诺**。server/云端模式不在当前范围（upstream 仅存语义参考）。
+- **数据**：单一 `taskboard.sqlite`；`CODEX_TASKBOARD_DATA_DIR` 决定位置（默认 `<repo>/.data`）。
 - **AI 侧协议**：SKILL.md 定义的工作流——开工前 `issue get` + `comment list`、认领用 `--if-version` 乐观锁、完成后评论 + 流转 `in_review`、仅用户明确接受才 `done`；每个写操作须带稳定 `--thread-id`。
 - **任务模型**（上游定义）：7 状态（backlog → todo → in_progress → in_review → done，另有 blocked / canceled）、5 优先级、标签、截止日期、评论、活动流、（云端/服务模式下）关联与附件。
 
 ## Capabilities and Constraints
 
-- **已实现**：纯客户端挂件（内嵌页面 + rusqlite 数据层 + 内建新建表单 + 流转按钮 + 5 秒轮询感知外部写入）；taskctl 本地直连（输出契约与上游完全一致：schemaVersion:2 JSON、退出码 0/2/3/4/5）；`clean --purge-data` 等清理边界；本地云端部署已验证可行。
+- **已实现**：纯客户端挂件（内嵌页面 + rusqlite 数据层 + 内建新建表单 + 流转按钮 + 事件广播 + 5 秒轮询兜底感知外部写入）；自研全版看板（七列拖拽/详情编辑/筛选/列表/归档/undo，React 19 + Tailwind v4 + shadcn 主题层）；**UI 统一精修（2026-08-25）**：全版看板无框自绘标题栏（与挂件同窗口语言）、三端统一暗色细滚动条、详情抽屉 <1280px 浮层化响应式、亮/暗双主题（localStorage > 系统偏好 > 暗色，html 内联防闪）；taskctl 本地直连（输出契约与上游完全一致：schemaVersion:2 JSON、退出码 0/2/3/4/5）；`clean --purge-data` 等清理边界。
 - **未实现 / 待决**：
-  - 云端模式未封装进 skill（`cloud login` 的交互式密码输入需绕行底层 API，尚无 `cloud-login` 子命令）；
-  - taskctl 本地模式不支持 cloud / relation / attachment（relation 本地直连技术上可行，待需求确认）；
-  - 挂件 L3-本机（详情 + 评论）——**已实现并实机验证**（2026-08-24：点任务条目进入详情视图，全字段 + 评论列表 + 评论输入；agent 发言强调色区分人机）；
-  - 挂件 L3-全版入口——**已实现**（2026-08-24：头部图标 → taskboard.py 拉起 server → 第二窗口内嵌；UI 点击路径待用户实测）；
+  - taskctl 本地模式不支持 cloud / project map / relation / attachment（关联与附件经挂件全版看板详情面板操作；taskctl 侧封装待需求确认）；
+  - AI Chat / Workflow / Gantt / Jira / 云同步 / 多项目（明确不做）；
   - 上游云端无账号体系与群组权限（共享密码信任模型），"同实例内按人隔离" 需二次开发，定位为**不在当前范围**。
-- **硬约束**：不修改 `upstream/` 任何文件（上游更新可无痛同步）；挂件页面为编译期嵌入（改前端需 build-widget → cargo build 两步）；node:sqlite 要求 Node ≥ 22.5；Windows 平台（进程锁、文件句柄行为均按 Windows 语义处理）。
+- **硬约束**：不修改 `upstream/` 任何文件（上游更新可无痛同步，仅作语义参考）；挂件页面为编译期嵌入（改前端需 npm run build → cargo build 两步）；node:sqlite 要求 Node ≥ 22.5；Windows 平台（进程锁、文件句柄行为均按 Windows 语义处理）。
 
 ## Brand Commitments
 
@@ -50,7 +48,7 @@ dashi-taskboard 的本地化封装与增强。让任务追踪成为 AI 工作流
 
 ## Evidence on Hand
 
-- 可运行产物：挂件 exe（已构建）、`cli/taskctl-local.mjs`、`skill/taskboard.py` 全链路经端到端验证（纯客户端 / WAL 并发 / 409 冲突重试 / 云端部署均实测通过，验证记录见会话）。
+- 可运行产物：挂件 exe（已构建）、`cli/taskctl-local.mjs`、`skill/taskboard.py` 全链路经端到端验证（纯客户端 / WAL 并发 / 409 冲突重试 / 全版看板双窗口同步均实测通过，验证记录见会话）。
 - 文档：`README.md`（架构总览）、`skill/SKILL.md`（AI 工作流协议）、上游 `docs/cloud-collaboration.md`（云端部署）。
 - 无真实用户数据 / 截图 / 用户证言——后续界面工作不得虚构这些。
 
@@ -58,6 +56,6 @@ dashi-taskboard 的本地化封装与增强。让任务追踪成为 AI 工作流
 
 1. **AI 是第一等用户**：界面与协议先服务"AI 建任务、人扫进度"的主循环；为 AI 设计的能力（taskctl 契约、thread-id、乐观锁）不可为人肉便利而弱化。
 2. **安静常驻**：挂件默认隐于屏幕角落，信息密度做减法；用户注意力是稀缺资源，只在异常（逾期、阻塞）时允许打破安静。
-3. **同库不分裂**：三种模式（纯客户端 / server / 云端）共享同一数据结构，任何新功能先回答"在哪个模式下可用、数据是否互通"。
-4. **上游为友不为敌**：一切增强通过外层封装实现，upstream 保持只读快照；能复用上游数据层的（如 taskctl-local）绝不重写。
+3. **同库不分裂**：挂件与 taskctl 共享同一数据结构，任何新功能先回答"数据是否互通"。
+4. **上游为友不为敌**：一切增强通过外层封装实现，upstream 保持只读快照（语义参考）；能复用上游数据层的（如 taskctl-local）绝不重写。
 5. **可撤销的试用心态**：不装全局依赖、不写系统配置、清理边界清晰——用户敢随时删掉重来，这本身就是产品信任的一部分。

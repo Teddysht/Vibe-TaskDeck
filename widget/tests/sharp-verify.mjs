@@ -19,18 +19,21 @@ const OUT = path.resolve('.out', 'sharp-verify-result.json');
 const SHOT_L2 = path.resolve('.out', 'sharp-shot-list.png');
 
 const MOCK_JS = `
-window.__TAURI__ = {
-  core: {
-    invoke(cmd) {
-      if (cmd === 'load_data') return Promise.resolve({ tasks: [
+// 颜色/对比度断言锁定暗色主题（防 headless Chrome 默认 prefers-light 触发亮色映射）
+try { localStorage.setItem('taskboard-theme', 'dark'); } catch (e) {} // THEME-BOOT 内联脚本读到 dark（注入期 documentElement 可能为 null，勿在此直接设 className）
+
+window.__TAURI_INTERNALS__ = {
+  invoke(cmd) {
+    if (cmd === 'plugin:event|listen') return Promise.resolve(1);
+    if (cmd === 'plugin:event|unlisten') return Promise.resolve();
+    if (cmd === 'load_data') return Promise.resolve({ tasks: [
         { id: 'A-1', title: 'AI 建的待办', identifier: 'TSK-101', status: 'todo', priority: 'none', dueDate: null, version: 1, creatorType: 'agent', threadId: 'th-1' },
         { id: 'U-1', title: '我建的待办', identifier: 'TSK-102', status: 'todo', priority: 'none', dueDate: null, version: 1, creatorType: 'user' },
         { id: 'A-2', title: 'AI 建的进行中 <img src=x onerror=window.__XSS__=1>', identifier: 'TSK-103<script>alert(1)</script>', status: 'in_progress', priority: 'none', dueDate: null, version: 1, creatorType: 'agent' },
       ], projects: [{ id: 'local', name: '本地' }] });
-      return Promise.resolve({});
-    },
+    return Promise.resolve({});
   },
-  event: { listen: () => Promise.resolve(() => {}) },
+  transformCallback: () => 0,
 };
 `;
 
@@ -103,7 +106,7 @@ async function main() {
   check('A1 mini 胶囊 meta 行有 AI 徽标（agent 任务）', mini1.hasAg === true && mini1.agText === 'AI', JSON.stringify(mini1));
 
   // ---- C: 转义防注入（轮转到 A-2，identifier 含 script 标签） ----
-  await evalJs(`state.idx = 2; renderMini(); 'ok'`);
+  await evalJs(`__widgetStore.setState({ idx: 2 }); 'ok'`);
   await sleep(200);
   const xss = await evalJs(`(() => ({
     xssHit: window.__XSS__ === 1,
@@ -159,14 +162,8 @@ async function main() {
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(SHOT_L2, Buffer.from(shot.result.data, 'base64'));
 
-  // ---- A4: L2 看板卡片徽标 ----
-  await evalJs(`document.getElementById('viewToggle').click(); 'ok'`);
-  await sleep(500);
-  const board = await evalJs(`(() => ({
-    agentCard: !!document.querySelector('#board .bcard[data-id="A-1"] .row1 .ag'),
-    userCard: !!document.querySelector('#board .bcard[data-id="U-1"] .row1 .ag'),
-  }))()`);
-  check('A4 看板卡片 agent 有徽标 / user 无', board.agentCard === true && board.userCard === false, JSON.stringify(board));
+  // （原 A4 看板卡片徽标断言随快捷看板移除而删除——看板场景由全版第二窗口承担，
+  //  其 agent 徽标由 upstream 侧渲染，agent-real 覆盖真实链路）
 
   fs.writeFileSync(OUT, JSON.stringify({ results }, null, 2), 'utf8');
   console.log('---');

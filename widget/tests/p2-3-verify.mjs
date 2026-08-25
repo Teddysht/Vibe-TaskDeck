@@ -18,17 +18,20 @@ const PAGE_URL = `http://localhost:${PORT}/mini.html`;
 const OUT = path.resolve('.out', 'p2-3-verify-result.json');
 
 const MOCK_JS = `
-window.__TAURI__ = {
-  core: {
-    invoke(cmd) {
-      if (cmd === 'load_data') return Promise.resolve({ tasks: [
+// 颜色/对比度断言锁定暗色主题（防 headless Chrome 默认 prefers-light 触发亮色映射）
+try { localStorage.setItem('taskboard-theme', 'dark'); } catch (e) {} // THEME-BOOT 内联脚本读到 dark（注入期 documentElement 可能为 null，勿在此直接设 className）
+
+window.__TAURI_INTERNALS__ = {
+  invoke(cmd) {
+    if (cmd === 'plugin:event|listen') return Promise.resolve(1);
+    if (cmd === 'plugin:event|unlisten') return Promise.resolve();
+    if (cmd === 'load_data') return Promise.resolve({ tasks: [
         { id: 'T-2', title: '待办甲', identifier: 'TSK-2', status: 'todo', priority: 'none', dueDate: null, version: 1 },
       ], projects: [{ id: 'local', name: '本地' }] });
-      if (cmd === 'move_task') return Promise.resolve({ ok: true });
-      return Promise.resolve({});
-    },
+    if (cmd === 'move_task') return Promise.resolve({ ok: true });
+    return Promise.resolve({});
   },
-  event: { listen: () => Promise.resolve(() => {}) },
+  transformCallback: () => 0,
 };
 `;
 
@@ -121,7 +124,7 @@ async function main() {
   await evalJs(`document.getElementById('expandBtn').click(); 'ok'`);
   await sleep(600);
   const roles = await evalJs(`(() => {
-    const ids = ['expandBtn', 'viewToggle', 'boardBtn', 'collapseBtn', 'closeBtn'];
+    const ids = ['expandBtn', 'viewToggle', 'collapseBtn', 'closeBtn'];
     const bad = ids.filter(id => { const el = document.getElementById(id); return !el || el.getAttribute('role') !== 'button' || el.tabIndex !== 0; });
     const chip = document.querySelector('#counts .c[data-s="todo"]');
     const item = document.querySelector('#list .item');
@@ -131,7 +134,7 @@ async function main() {
       itemOk: !!item && item.getAttribute('role') === 'button' && item.tabIndex === 0,
     };
   })()`);
-  check('P2-3c 静态交互元素（头部五键）均有 role+tabindex', roles.badStatic.length === 0, badJoin(roles.badStatic));
+  check('P2-3c 静态交互元素（头部四键）均有 role+tabindex', roles.badStatic.length === 0, badJoin(roles.badStatic));
   check('P2-3d 动态渲染（counts chip / 列表条目）有 role+tabindex', roles.chipOk === true && roles.itemOk === true, `chip=${roles.chipOk} item=${roles.itemOk}`);
 
   // ---- 真实 Tab 聚焦 + 焦点环 ----

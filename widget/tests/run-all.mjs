@@ -3,7 +3,7 @@
  * 一键回归入口：node widget/tests/run-all.mjs
  *
  * 两层套件：
- *   mock 层（默认执行）——无头 Chrome + mock __TAURI__，验证纯前端
+ *   mock 层（默认执行）——无头 Chrome + mock __TAURI_INTERNALS__，验证纯前端
  *     行为（筛选/流转/toast/键盘/对比度/徽标/XSS 转义/指示点）。
  *     前置：widget/dist/mini.html 已构建（脚本会自动先跑 build）。
  *   真实层（可选）——连运行中的挂件（真实 Rust command + SQLite）。
@@ -28,11 +28,16 @@ const MOCK_SUITE = [
   { file: 'p2-3-verify.mjs',        name: 'P2-3 对比度 + 键盘可达' },
   { file: 'sharp-verify.mjs',       name: 'agent 徽标 + 胶囊展开 + XSS 转义' },
   { file: 'p3-verify.mjs',          name: 'P3 指示点 scaleX + 字号' },
+  { file: 'fb-board-verify.mjs',    name: 'FB 看板核心（七列/拖拽落点/冲突重试）' },
+  { file: 'fb-detail-verify.mjs',   name: 'FB 详情面板（编辑/Markdown/评论/活动流）' },
+  { file: 'fb-filters-verify.mjs',  name: 'FB 筛选+URL 同步+undo 栈' },
+  { file: 'fb-archive-verify.mjs',  name: 'FB 归档面板+右键菜单+标签编辑' },
 ];
 
 const REAL_SUITE = [
   { file: 'e2e-real-verify.mjs',    name: '真机端到端（数据/新建/流转/筛选/详情）' },
   { file: 'agent-real-verify.mjs',  name: 'agent 徽标真实链路（taskctl → 挂件）' },
+  { file: 'fb-real-verify.mjs',     name: 'FB 双窗口真实链路（第二窗口/同步/SQLite 往返）' },
 ];
 
 function runOne(t) {
@@ -46,9 +51,13 @@ function runOne(t) {
 }
 
 function main() {
-  // 1. 构建产物（mock 层依赖 dist/mini.html）
+  // 1. 构建产物（mock 层依赖 dist/mini.html；Vite 迁移后走 npm run build）
   console.log('构建 widget/dist/mini.html ...');
-  const build = spawnSync('node', [path.join(REPO, 'widget', 'scripts', 'build-widget.mjs')], { stdio: 'inherit' });
+  const build = spawnSync('npm', ['run', 'build'], {
+    stdio: 'inherit',
+    cwd: path.join(REPO, 'widget'),
+    shell: process.platform === 'win32',
+  });
   if (build.status !== 0) { console.error('构建失败，中止'); process.exit(1); }
 
   const suite = [...MOCK_SUITE];

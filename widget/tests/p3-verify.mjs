@@ -12,12 +12,15 @@ const server = http.createServer((req, res) => {
 });
 
 const MOCK_JS = `
-window.__TAURI__ = {
-  core: { invoke: (cmd) => Promise.resolve(cmd === 'load_data' ? { tasks: [
+// 颜色/对比度断言锁定暗色主题（防 headless Chrome 默认 prefers-light 触发亮色映射）
+try { localStorage.setItem('taskboard-theme', 'dark'); } catch (e) {} // THEME-BOOT 内联脚本读到 dark（注入期 documentElement 可能为 null，勿在此直接设 className）
+
+window.__TAURI_INTERNALS__ = {
+  invoke: (cmd) => Promise.resolve(cmd === 'plugin:event|listen' ? 1 : cmd === 'plugin:event|unlisten' ? undefined : cmd === 'load_data' ? { tasks: [
     { id: 'T-1', title: '任务一', identifier: 'TSK-1', status: 'todo', priority: 'none', dueDate: null, version: 1 },
     { id: 'T-2', title: '任务二', identifier: 'TSK-2', status: 'in_progress', priority: 'none', dueDate: null, version: 1 },
-  ], projects: [{ id: 'local', name: '本地' }] } : {}) },
-  event: { listen: () => Promise.resolve(() => {}) },
+  ], projects: [{ id: 'local', name: '本地' }] } : {}),
+  transformCallback: () => 0,
 };
 `;
 

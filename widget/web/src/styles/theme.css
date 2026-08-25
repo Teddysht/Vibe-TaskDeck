@@ -1,0 +1,110 @@
+/* ==========================================================================
+   shadcn 主题层（mini 与 fullboard 共享）
+   --------------------------------------------------------------------------
+   shadcn 标准变量 → 别名映射到 tokens.css 的 SEMANTIC（hex 原样保留，
+   不转 oklch，保证像素级一致），再经 @theme inline 暴露为 Tailwind utilities。
+   主题结构：默认暗色（html.dark 常驻）；亮色上线时把 :root 块整体替换为
+   亮色映射即可，.dark 不动。
+   注意：shadcn 的 --accent 语义是「悬停底色」，品牌强调色归 --primary——
+   与 tokens.css 的 --accent（品牌色）名字撞车，映射时已错位对齐。
+   ========================================================================== */
+:root{
+  --background:var(--bg-canvas);
+  --foreground:var(--text-primary);
+  --card:var(--bg-surface);
+  --card-foreground:var(--text-primary);
+  --popover:var(--bg-surface-2);
+  --popover-foreground:var(--text-primary);
+  --primary:var(--accent);              /* 品牌强调 → primary */
+  --primary-foreground:var(--text-inverse);
+  --secondary:var(--bg-surface-2);
+  --secondary-foreground:var(--text-primary);
+  --muted:var(--bg-surface-2);
+  --muted-foreground:var(--text-secondary);
+  /* ⚠ 不定义 --accent：tokens.css 的 --accent 是品牌色（widget.css 大量引用），
+     shadcn 的悬停底色语义在 @theme inline 里直接映射，不经此名 */
+  --destructive:var(--danger);
+  --border:var(--border-subtle);
+  --input:var(--border-strong);         /* 输入框边框比 border 亮一档（与现状一致） */
+  --ring:var(--accent);
+  --radius:8px;                          /* = radius-md，shadcn 组件基准 */
+}
+
+.dark{
+  /* 与 :root 同值占位；亮色上线时 :root 整体替换为亮色映射，本块保持暗色 */
+  --background:var(--bg-canvas);
+  --foreground:var(--text-primary);
+  --card:var(--bg-surface);
+  --card-foreground:var(--text-primary);
+  --popover:var(--bg-surface-2);
+  --popover-foreground:var(--text-primary);
+  --primary:var(--accent);
+  --primary-foreground:var(--text-inverse);
+  --secondary:var(--bg-surface-2);
+  --secondary-foreground:var(--text-primary);
+  --muted:var(--bg-surface-2);
+  --muted-foreground:var(--text-secondary);
+  --destructive:var(--danger);
+  --border:var(--border-subtle);
+  --input:var(--border-strong);
+  --ring:var(--accent);
+  --radius:8px;
+}
+
+/* --------------------------------------------------------------------------
+   shadcn 变量 → Tailwind utilities（bg-background / text-foreground /
+   bg-primary / border-border / ring-ring ...），shadcn 组件即插即用
+   -------------------------------------------------------------------------- */
+@theme inline{
+  --color-background:var(--background);
+  --color-foreground:var(--foreground);
+  --color-card:var(--card);
+  --color-card-foreground:var(--card-foreground);
+  --color-popover:var(--popover);
+  --color-popover-foreground:var(--popover-foreground);
+  --color-primary:var(--primary);
+  --color-primary-foreground:var(--primary-foreground);
+  --color-secondary:var(--secondary);
+  --color-secondary-foreground:var(--secondary-foreground);
+  --color-muted:var(--muted);
+  --color-muted-foreground:var(--muted-foreground);
+  /* shadcn 的 accent 语义（悬停底色）直接映射 surface-2——
+     不能用 var(--accent)（那是品牌色，见 :root 块注释） */
+  --color-accent:var(--bg-surface-2);
+  --color-accent-foreground:var(--text-primary);
+  --color-destructive:var(--destructive);
+  --color-border:var(--border);
+  --color-input:var(--input);
+  --color-ring:var(--ring);
+
+  /* 语义层直通 utilities：新写 JSX 可直接用 bg-surface-2 / text-weak /
+     text-danger-soft 等，与 widget.css 的 var() 引用同源同值 */
+  --color-canvas:var(--bg-canvas);
+  --color-surface:var(--bg-surface);
+  --color-surface-2:var(--bg-surface-2);
+  --color-surface-3:var(--bg-surface-3);
+  --color-text-primary:var(--text-primary);
+  --color-text-secondary:var(--text-secondary);
+  --color-text-weak:var(--text-weak);
+  --color-text-inverse:var(--text-inverse);
+  --color-brand:var(--accent);
+  --color-brand-hover:var(--accent-hover);
+  --color-brand-active:var(--accent-active);
+  --color-brand-soft:var(--accent-soft);
+  --color-danger:var(--danger);
+  --color-danger-soft:var(--danger-soft);
+  --color-danger-bg:var(--danger-bg);
+  --color-success:var(--success);
+
+  /* 紧凑字号刻度（挂件全域紧凑是设计目标）：
+     text-xs=10.5px（中文笔画粘连优化精确值）/ sm=11 / base=12.5 / lg=15，
+     与 tokens.css --font-* 双轨同值，shadcn 组件随之紧凑 */
+  --text-xs:var(--font-xs);
+  --text-sm:var(--font-sm);
+  --text-base:var(--font-md);
+  --text-lg:var(--font-lg);
+
+  --font-sans:var(--font-family);
+  --shadow-float:var(--shadow-float);
+  --ease-widget:var(--ease-out);
+}

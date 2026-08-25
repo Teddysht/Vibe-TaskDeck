@@ -17,16 +17,19 @@ const OUT = path.resolve('.out', 'p2-1-verify-result.json');
 const SHOT = path.resolve('.out', 'p2-1-shot-board.png');
 
 const MOCK_JS = `
-window.__TAURI__ = {
-  core: {
-    invoke(cmd) {
-      if (cmd === 'load_data') return Promise.resolve({ tasks: [
+// 颜色/对比度断言锁定暗色主题（防 headless Chrome 默认 prefers-light 触发亮色映射）
+try { localStorage.setItem('taskboard-theme', 'dark'); } catch (e) {} // THEME-BOOT 内联脚本读到 dark（注入期 documentElement 可能为 null，勿在此直接设 className）
+
+window.__TAURI_INTERNALS__ = {
+  invoke(cmd) {
+    if (cmd === 'plugin:event|listen') return Promise.resolve(1);
+    if (cmd === 'plugin:event|unlisten') return Promise.resolve();
+    if (cmd === 'load_data') return Promise.resolve({ tasks: [
         { id: 'T-2', title: '待办甲', identifier: 'TSK-2', status: 'todo', priority: 'none', dueDate: null, version: 1 },
       ], projects: [{ id: 'local', name: '本地' }] });
-      return Promise.resolve({});
-    },
+    return Promise.resolve({});
   },
-  event: { listen: () => Promise.resolve(() => {}) },
+  transformCallback: () => 0,
 };
 `;
 
@@ -95,33 +98,26 @@ async function main() {
 
   const readToggle = () => evalJs(`(() => {
     const v = document.getElementById('viewToggle');
-    return { title: v.title, hasRect: !!v.querySelector('rect'), hasPath: !!v.querySelector('path') };
+    return { title: v.title, hasRect: !!v.querySelector('rect'), hasPath: !!v.querySelector('path'), pathCount: v.querySelectorAll('path').length };
   })()`);
 
-  // list 态：显示目标视图 = 看板图标（rect 列）
+  // 快捷看板已移除：viewToggle 即全版看板入口（外链图标 = 3 条 path，无 rect）
   const s1 = await readToggle();
-  check('P2-1a list 态 viewToggle 显示看板图标（rect）', s1.hasRect === true && s1.hasPath === false, JSON.stringify(s1));
+  check('P2-1a viewToggle 为全版看板入口（外链图标 path×3）', s1.hasRect === false && s1.pathCount === 3, JSON.stringify(s1));
+  check('P2-1b viewToggle title 含「全版看板」', s1.title.includes('全版看板'), `title="${s1.title}"`);
 
-  // 切到 board：显示列表图标（path 三横线），且与 boardBtn（path 外链）可通过形状区分
+  // 点击 → open_full_board 调用（mock 层返回成功 → toast「全版看板已打开」）
   await evalJs(`document.getElementById('viewToggle').click(); 'ok'`);
-  await sleep(500);
-  const s2 = await readToggle();
-  check('P2-1b board 态 viewToggle 显示列表图标（path）', s2.hasRect === false && s2.hasPath === true, JSON.stringify(s2));
-  check('P2-1c board 态 title 为「切换回列表视图」', s2.title === '切换回列表视图', `title="${s2.title}"`);
-
-  // boardBtn 与 viewToggle 的图标 SVG 路径不同（语义可区分）
-  const icons = await evalJs(`(() => {
-    const a = document.getElementById('viewToggle').querySelector('svg').innerHTML;
-    const b = document.getElementById('boardBtn').querySelector('svg').innerHTML;
-    return { same: a === b };
+  await sleep(600);
+  const opened = await evalJs(`(() => {
+    const t = document.getElementById('toast');
+    return { text: t ? t.textContent : '', show: t ? t.classList.contains('show') : false };
   })()`);
-  check('P2-1d board 态下 viewToggle 与 boardBtn 图标不同', icons.same === false, `same=${icons.same}`);
+  check('P2-1c 点 viewToggle 触发 open_full_board → 成功 toast', opened.show === true && opened.text === '全版看板已打开', JSON.stringify(opened));
 
-  // 再切回 list：图标恢复看板
-  await evalJs(`document.getElementById('viewToggle').click(); 'ok'`);
-  await sleep(500);
-  const s3 = await readToggle();
-  check('P2-1e 切回 list 态图标恢复看板（rect）', s3.hasRect === true && s3.hasPath === false, JSON.stringify(s3));
+  // boardBtn 已移除（快捷看板删除后入口唯一化）
+  const gone = await evalJs(`document.getElementById('boardBtn') === null`);
+  check('P2-1d boardBtn 已移除（入口唯一）', gone === true, `boardBtn=${gone}`);
 
   // closeBtn：间距隔离 + hover 红色规则
   const close = await evalJs(`(() => {

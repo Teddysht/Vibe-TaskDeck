@@ -32,3 +32,6 @@ plans/
 .codegraph/
 .impeccable/
 widget/tests/.out/
+
+# widget 前端依赖（Vite 迁移）
+widget/node_modules/

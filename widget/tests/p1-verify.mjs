@@ -28,21 +28,24 @@ const MOCK_TASKS = [
   { id: 'T-7', title: '已完成',   identifier: 'TSK-7', status: 'done',       priority: 'none',   dueDate: null, version: 1 },
 ];
 
-// 页面加载前注入：mock Tauri invoke / event.listen
+// 页面加载前注入：mock Tauri internals（@tauri-apps/api 走 __TAURI_INTERNALS__.invoke）
 const MOCK_JS = `
-window.__TAURI__ = {
-  core: {
-    invoke(cmd, args) {
-      if (cmd === 'load_data') {
-        return Promise.resolve({ tasks: ${JSON.stringify(MOCK_TASKS)}, projects: [{ id: 'local', name: '本地' }] });
-      }
-      if (cmd === 'move_task') {
-        return Promise.reject({ code: 'VERSION_CONFLICT', message: 'version conflict (mock)' });
-      }
-      return Promise.resolve({});
-    },
+// 颜色/对比度断言锁定暗色主题（防 headless Chrome 默认 prefers-light 触发亮色映射）
+try { localStorage.setItem('taskboard-theme', 'dark'); } catch (e) {} // THEME-BOOT 内联脚本读到 dark（注入期 documentElement 可能为 null，勿在此直接设 className）
+
+window.__TAURI_INTERNALS__ = {
+  invoke(cmd, args) {
+    if (cmd === 'plugin:event|listen') return Promise.resolve(1);
+    if (cmd === 'plugin:event|unlisten') return Promise.resolve();
+    if (cmd === 'load_data') {
+      return Promise.resolve({ tasks: ${JSON.stringify(MOCK_TASKS)}, projects: [{ id: 'local', name: '本地' }] });
+    }
+    if (cmd === 'move_task') {
+      return Promise.reject({ code: 'VERSION_CONFLICT', message: 'version conflict (mock)' });
+    }
+    return Promise.resolve({});
   },
-  event: { listen: () => Promise.resolve(() => {}) },
+  transformCallback: () => 0,
 };
 `;
 
@@ -167,7 +170,7 @@ async function main() {
   check('P1-2c 后台 console.error 记录 move failed', consoleLog.some(l => l.type === 'error' && l.text.includes('move failed')),
     `错误日志 ${consoleLog.filter(l => l.type === 'error').length} 条`);
   // 任务状态未被本地误改（仍 todo）
-  const stillTodo = await evalJs(`(state.tasks.find(t => t.id === 'T-2') || {}).status`);
+  const stillTodo = await evalJs(`(__widgetStore.getState().tasks.find(t => t.id === 'T-2') || {}).status`);
   check('P1-2d 冲突后任务状态未被误改为流转目标', stillTodo === 'todo', `status=${stillTodo}`);
 
   // toast 态截图

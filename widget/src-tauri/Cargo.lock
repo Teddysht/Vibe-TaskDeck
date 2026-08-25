@@ -513,12 +513,14 @@ dependencies = [
 name = "dashi-taskboard-widget"
 version = "0.1.0"
 dependencies = [
+ "base64 0.22.1",
  "rusqlite",
  "serde",
  "serde_json",
  "tauri",
  "tauri-build",
  "uuid",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
