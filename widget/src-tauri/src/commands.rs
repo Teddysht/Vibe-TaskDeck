@@ -55,12 +55,63 @@ pub(crate) fn clamp_to_monitor(win: &tauri::WebviewWindow) {
 
 /// 拉取挂件所需的全部数据（任务 + 项目）
 #[tauri::command]
-pub fn load_data(db: State<Db>) -> Result<serde_json::Value, db::CommandError> {
+pub fn load_data(app: AppHandle, db: State<Db>) -> Result<serde_json::Value, db::CommandError> {
     let conn = db
         .0
         .lock()
         .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
-    Ok(db::load_data(&conn))
+    let data = db::load_data(&conn);
+    // 状态通知：diff 上次快照，新进入 in_review/blocked 的任务弹系统通知
+    // （这两个状态需要人介入；其余状态不弹）。首次 load 只建基线。
+    notify_status_changes(&app, &data);
+    Ok(data)
+}
+
+/// 系统通知 diff（见 main.rs NotifyBaseline 注释）。
+/// 只在「上次不是该状态、这次是」时弹——同任务多次轮询同状态不重复打扰。
+fn notify_status_changes(app: &AppHandle, data: &serde_json::Value) {
+    use std::collections::HashMap;
+    use tauri_plugin_notification::NotificationExt;
+
+    let Some(tasks) = data.get("tasks").and_then(|t| t.as_array()) else { return };
+    let mut current: HashMap<String, (String, String)> = HashMap::new(); // id → (status, title)
+    for task in tasks {
+        if let (Some(id), Some(status), Some(title)) = (
+            task.get("id").and_then(|v| v.as_str()),
+            task.get("status").and_then(|v| v.as_str()),
+            task.get("title").and_then(|v| v.as_str()),
+        ) {
+            current.insert(id.to_string(), (status.to_string(), title.to_string()));
+        }
+    }
+
+    let baseline = app.state::<crate::NotifyBaseline>();
+    let mut guard = baseline.0.lock().unwrap();
+    let Some(prev) = guard.as_ref() else {
+        // 首次：建基线不弹
+        *guard = Some(current.into_iter().map(|(k, (s, _))| (k, s)).collect());
+        return;
+    };
+
+    for (id, (status, title)) in &current {
+        let notify = match status.as_str() {
+            "in_review" => Some(("任务待评审", "待你验收")),
+            "blocked" => Some(("任务被阻塞", "需要你介入")),
+            _ => None,
+        };
+        // 上次不存在或状态不同，且本次是需要人介入的状态 → 弹
+        if let Some((head, action)) = notify {
+            if prev.get(id).map(|old| old != status).unwrap_or(false) {
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title(head)
+                    .body(format!("{title} — {action}"))
+                    .show();
+            }
+        }
+    }
+    *guard = Some(current.into_iter().map(|(k, (s, _))| (k, s)).collect());
 }
 
 /// 新建任务（挂件表单）

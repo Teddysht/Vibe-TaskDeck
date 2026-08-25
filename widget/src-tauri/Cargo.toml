@@ -9,12 +9,14 @@ rust-version = "1.88"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = "2"
+tauri = { version = "2", features = ["tray-icon"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
+tauri-plugin-notification = "2.3.3"
+tauri-plugin-autostart = "2.5.1"
 
 [target.'cfg(windows)'.dependencies]
 # 左键状态查询（拖拽检测：拖拽中不做位置 clamp，保证跨屏自由拖动）

@@ -8,6 +8,7 @@ import { closeWidget, openFullBoard } from '../lib/api';
 import { errMsg, showToast } from '../lib/toast';
 import { useAppStore } from '../store/useAppStore';
 import CountsBar from './CountsBar';
+import AutostartToggle from './AutostartToggle';
 import NewTaskPanel from './NewTaskPanel';
 import TaskDetail from './TaskDetail';
 import TaskList from './TaskList';
@@ -84,6 +85,7 @@ export default function Large({ hidden, entering, leaving, onCollapse }: Props) 
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>
         </div>
         <ThemeToggle className="ic" />
+        <AutostartToggle className="ic" />
         <div className="ic" id="collapseBtn" title="收起" role="button" tabIndex={0} onClick={onCollapse}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 10l5 5 5-5" /></svg>
         </div>

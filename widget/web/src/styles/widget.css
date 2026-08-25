@@ -99,6 +99,9 @@
 .large .hd .ic{width:24px;height:24px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--text-weak);cursor:pointer;-webkit-app-region:no-drag;transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out)}
 .large .hd .ic svg{width:15px;height:15px}
 .large .hd .ic:hover{background:var(--bg-surface-2);color:var(--text-primary)}
+/* 自启开关：button 元素重置 + 激活态（品牌色点亮，与主题切换同位） */
+.large .hd .ic.autostart{border:none;background:transparent;padding:0;font-family:inherit}
+.large .hd .ic.autostart.on{color:var(--accent-hover)}
 /* 退出是破坏性操作（关窗）：与收起键拉开间距 + hover 红色警示，降低误触（P2-1） */
 .large .hd .ic.close{margin-left:6px}
 .large .hd .ic.close:hover{background:var(--danger-bg);color:var(--danger-soft)}

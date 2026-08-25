@@ -3,11 +3,16 @@
 mod commands;
 mod db;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::Manager;
+use tauri::{
+    menu::{Menu, MenuItem},
+    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    Manager,
+};
 
 /// 单实例锁持有的文件句柄（存为 managed state，防止提前 drop 释放锁）
 #[allow(dead_code)] // 字段仅用于持有句柄保持独占，从不读取
@@ -20,6 +25,13 @@ struct MoveClamp {
     last_moved: Mutex<Option<Instant>>,
     armed: AtomicBool,
 }
+
+/// 状态通知基线：上次 load_data 时的 (task_id → status) 快照。
+/// 每次 load_data 自查 diff：新进入 in_review/blocked 的任务弹系统通知
+/// （这两个状态需要人介入）；首次 load 只建基线不弹。挂件自身 UI 操作
+/// 不经过这里（走事件即时刷新），所以只捕捉外部（taskctl/AI）写入。
+#[derive(Default)]
+struct NotifyBaseline(Mutex<Option<HashMap<String, String>>>);
 
 /// Windows：鼠标左键是否按住（app-region 拖拽期间为真）。
 /// 拖拽中永不 clamp，否则窗口被顶在当前屏边缘拖不过去。
@@ -51,8 +63,22 @@ fn acquire_instance_lock(path: &std::path::Path) -> Result<Option<std::fs::File>
     }
 }
 
+/// 唤回挂件主窗（托盘左键/菜单「显示挂件」）：显示 + 聚焦。
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.show();
+        let _ = win.unminimize();
+        let _ = win.set_focus();
+    }
+}
+
 fn main() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .invoke_handler(tauri::generate_handler![
             commands::load_data,
             commands::create_task,
@@ -96,6 +122,44 @@ fn main() {
             let conn = db::open_database()?;
             app.manage(db::Db(std::sync::Mutex::new(conn)));
             app.manage(MoveClamp::default());
+            app.manage(NotifyBaseline::default());
+
+            // ---- 系统托盘：常驻入口（左键唤回挂件；右键菜单）----
+            let show = MenuItem::with_id(app, "show", "显示挂件", true, None::<&str>)?;
+            let board = MenuItem::with_id(app, "board", "打开全版看板", true, None::<&str>)?;
+            let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+            let menu = Menu::with_items(app, &[&show, &board, &quit])?;
+            let tray = TrayIconBuilder::with_id("main-tray")
+                .icon(app.default_window_icon().unwrap().clone())
+                .tooltip("Vibe-TaskDeck")
+                .menu(&menu)
+                // 左键单击也唤回挂件（Windows 托盘惯例：左键=主操作）
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        show_main_window(&tray.app_handle());
+                    }
+                })
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "show" => show_main_window(app),
+                    "board" => {
+                        // 命令层开窗（复用 open_full_board 的窗口构建逻辑）
+                        let handle = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = commands::open_full_board(handle).await;
+                        });
+                    }
+                    "quit" => {
+                        app.exit(0); // 退出释放单实例锁（文件句柄随进程关闭）
+                    }
+                    _ => {}
+                })
+                .build(app)?;
+            tray.set_visible(true)?;
 
             // 挂件页面为编译期内嵌资源（frontendDist → widget/dist/mini.html）
             // 默认停靠主屏右上角（胶囊挂件惯例位）：x 留 24px 边距，y 留 16px
