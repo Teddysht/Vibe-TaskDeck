@@ -47,8 +47,21 @@ export default function App() {
   const selectedId = useBoardStore((s) => s.selectedId);
   const select = useBoardStore((s) => s.select);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  // 抽屉退出两段式：closing 态跑 120ms 反向动画（CSS fb-panel-out），
+  // 动画结束才真正卸载（select(null)）。时长与 .fb-detail.closing 锚定。
+  const [detailClosing, setDetailClosing] = useState(false);
+
+  function closeDetail() {
+    if (detailClosing) return; // 防重入（closing 期间再点关闭忽略）
+    setDetailClosing(true);
+    window.setTimeout(() => {
+      select(null);
+      setDetailClosing(false);
+    }, 120);
+  }
 
   function onCardClick(task: Task) {
+    if (detailClosing) setDetailClosing(false); // closing 中切换目标：立即恢复
     select(task.id);
   }
 
@@ -94,7 +107,7 @@ export default function App() {
           <IssueListView onRowClick={onCardClick} />
         )}
         {selectedId && (
-          <TaskDetailPanel taskId={selectedId} onClose={() => select(null)} />
+          <TaskDetailPanel taskId={selectedId} closing={detailClosing} onClose={closeDetail} />
         )}
         <OtherTasksPanel />
       </div>

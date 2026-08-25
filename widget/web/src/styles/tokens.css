@@ -169,6 +169,13 @@
    ========================================================================== */
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden}
+/* 主题切换颜色过渡：html 级 color 继承（大面积表面由各组件自己的
+   background-color/border-color transition 承担，见 fullboard.css /
+   widget.css 各组件声明）。只过渡颜色族——禁止 transition:all。 */
+html{
+  transition:color var(--duration-base) var(--ease-out),
+             background-color var(--duration-base) var(--ease-out);
+}
 #root{height:100%}                     /* React 挂载容器补齐 100% 链（旧版 .mini/.large 直接挂 body） */
 body{
   font-family:var(--font-family);
@@ -208,6 +215,8 @@ svg{display:block}
    动效豁免：前庭敏感用户降级（保留 opacity 反馈，去除位移与闪烁）
    ========================================================================== */
 @media (prefers-reduced-motion: reduce){
+  /* 主题切换：色彩瞬切（功能不受损） */
+  html{transition-duration:0ms}
   /* 轮转切换 / 表单展开：只留淡入，去位移 */
   .mini .body.swap{animation:swap-reduced var(--duration-fast) linear}
   @keyframes swap-reduced{from{opacity:0}to{opacity:1}}

@@ -46,7 +46,15 @@ function activityText(changesJson: string): string {
   }
 }
 
-export default function TaskDetailPanel({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+export default function TaskDetailPanel({
+  taskId,
+  closing,
+  onClose,
+}: {
+  taskId: string;
+  closing?: boolean; // 退出动画态（App.closeDetail 两段式：120ms fb-panel-out 后卸载）
+  onClose: () => void;
+}) {
   const [detail, setDetail] = useState<IssueDetail | null>(null);
   const [editingTitle, setEditingTitle] = useState(false);
   const [editingDesc, setEditingDesc] = useState(false);
@@ -122,7 +130,7 @@ export default function TaskDetailPanel({ taskId, onClose }: { taskId: string; o
   }
 
   if (!detail) {
-    return <aside className="fb-detail" data-testid="detail-loading">加载中…</aside>;
+    return <aside className={`fb-detail${closing ? ' closing' : ''}`} data-testid="detail-loading">加载中…</aside>;
   }
 
   const t = detail.task;
@@ -152,7 +160,7 @@ export default function TaskDetailPanel({ taskId, onClose }: { taskId: string; o
   }
 
   return (
-    <aside className="fb-detail">
+    <aside className={`fb-detail${closing ? ' closing' : ''}`}>
       <header className="d-hd">
         <button className="d-back" title="返回看板（Esc）" onClick={onClose}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 12H5M12 19l-7-7 7-7" /></svg>

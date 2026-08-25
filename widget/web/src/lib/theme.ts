@@ -23,6 +23,8 @@ export function resolveTheme(): ThemeMode {
 }
 
 export function applyTheme(mode: ThemeMode): void {
+  // 颜色过渡由 CSS 层承担（tokens.css html 级 color + 各组件
+  // background-color/border-color transition），此处只切 class
   document.documentElement.className = mode;
 }
 

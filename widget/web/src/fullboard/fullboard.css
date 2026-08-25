@@ -31,6 +31,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: var(--bg-surface);
   flex: 0 0 auto;
   -webkit-app-region: drag;               /* 整栏拖窗；交互元素逐个豁免 */
+  /* 主题切换颜色过渡（颜色族 only，勿动布局属性） */
+  transition: background-color var(--duration-base) var(--ease-out),
+              border-color var(--duration-base) var(--ease-out);
 }
 .fb-header .sp { flex: 1 }
 .fb-brand { display: flex; align-items: center; gap: 10px; min-width: 0 }
@@ -89,12 +92,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   gap: 8px;
   min-height: 0;
   border-radius: var(--radius-lg);
-  transition: background var(--duration-fast) var(--ease-out);
+  /* 常驻透明 outline：拖拽高亮切换只变颜色（outline-width 属布局，不动画） */
+  outline: 1px dashed transparent;
+  outline-offset: -4px;
+  transition: background var(--duration-fast) var(--ease-out),
+              outline-color var(--duration-fast) var(--ease-out);
 }
 .fb-col.is-drop-target {
   background: var(--bg-surface-2);
-  outline: 1px dashed var(--border-strong);
-  outline-offset: -4px;
+  outline-color: var(--border-strong);
 }
 .col-header {
   display: flex;
@@ -159,6 +165,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: var(--bg-surface-2);
   border-color: var(--border-hover);
 }
+/* 按压反馈（对齐挂件端按钮 :active scale(.97)；卡片面积大取温和侧 .98，
+   transform 过渡复用上方 .fb-card transition 既有声明） */
+.fb-card:active {
+  transform: scale(0.98);
+}
 .fb-card.is-dragging {
   opacity: .45;
 }
@@ -168,6 +179,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .fb-card.is-moving {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+  /* 呼吸态：SQLite 往返窗口（~400ms×2）内的「正在写入」活性，
+    与 is-settling 收敛动画首尾相接；有限 2 次不做 infinite（安静基调） */
+  animation: fb-moving-pulse 400ms var(--ease-out) 2 alternate;
 }
 .fb-card.is-settling {
   animation: fb-settle var(--duration-base) var(--ease-out);
@@ -175,6 +189,12 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @keyframes fb-settle {
   from { box-shadow: 0 0 0 3px var(--accent-soft); }
   to { box-shadow: 0 0 0 0 transparent; }
+}
+/* moving 呼吸（box-shadow 用字面 rgba——keyframes 内 var() 有解析顺序坑；
+   峰值 .18 为 accent-soft 的呼吸加强版保证可见性） */
+@keyframes fb-moving-pulse {
+  from { box-shadow: 0 0 0 0 rgba(110,139,255,0); }
+  to { box-shadow: 0 0 0 4px rgba(110,139,255,.18); }
 }
 
 .card-topline {
@@ -275,6 +295,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   min-height: 0;
   box-shadow: -16px 0 40px rgba(0,0,0,.4); /* 浮层与主内容的层级分离 */
   animation: fb-panel-in var(--duration-base) var(--ease-out);
+  /* 主题切换颜色过渡（颜色族 only；animation 不受影响） */
+  transition: background-color var(--duration-base) var(--ease-out),
+              border-color var(--duration-base) var(--ease-out);
 }
 @media (min-width: 1280px) {
   .fb-detail {
@@ -287,6 +310,26 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @keyframes fb-panel-in {
   from { opacity: 0; transform: translateX(8px); }
   to { opacity: 1; transform: none; }
+}
+/* 菜单入场（右键/标签下拉）：从触发点方向缩放浮现（150ms，AUDIT 菜单预算
+   下限；scale 起点 0.96 非 0——物理性） */
+@keyframes fb-menu-in {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+/* 归档面板展开：右侧 8px 淡入滑入（与 fb-panel-in 同构，150ms） */
+@keyframes fb-slide-in {
+  from { opacity: 0; transform: translateX(8px); }
+  to { opacity: 1; transform: none; }
+}
+/* 抽屉退出（fb-panel-in 的镜像反向；120ms 低于入场 180ms——退出要快）。
+   时长与 App.tsx closeDetail 的 setTimeout 锚定，改动须同步两处。 */
+.fb-detail.closing {
+  animation: fb-panel-out 120ms var(--ease-out) forwards;
+}
+@keyframes fb-panel-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateX(8px); }
 }
 .d-hd {
   display: flex;
@@ -514,6 +557,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding: 8px 16px;
   border-bottom: 1px solid var(--border-subtle);
   flex-wrap: wrap;
+  /* 主题切换颜色过渡（颜色族 only） */
+  transition: background-color var(--duration-base) var(--ease-out),
+              border-color var(--duration-base) var(--ease-out);
 }
 .fb-search {
   width: 200px;
@@ -524,6 +570,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--text-primary);
   font-size: var(--font-sm);
   font-family: inherit;
+  transition: border-color var(--duration-fast) var(--ease-out);
 }
 .fb-search:focus { outline: none; border-color: var(--border-hover); }
 .fb-chips { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -573,6 +620,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   background: transparent;
   color: var(--text-weak);
   cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out),
+              color var(--duration-fast) var(--ease-out);
 }
 .fb-viewtoggle button.on {
   background: var(--bg-surface-3);
@@ -612,6 +661,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-radius: var(--radius-sm);
   cursor: pointer;
   align-items: center;
+  transition: background var(--duration-fast) var(--ease-out);
 }
 .fb-list-row:hover { background: var(--bg-surface-2); }
 .fb-list-row .c-id { color: var(--text-weak); font-variant-numeric: tabular-nums; font-size: var(--font-xs); }
@@ -657,6 +707,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   display: flex;
   flex-direction: column;
   gap: 2px;
+  animation: fb-slide-in 150ms var(--ease-out);
 }
 .fb-other-item {
   display: flex;
@@ -706,6 +757,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   box-shadow: var(--shadow-float);
   display: flex;
   flex-direction: column;
+  transform-origin: top left;          /* 从指针点（右键位置）向右下展开 */
+  animation: fb-menu-in 150ms var(--ease-out);
 }
 .fb-ctxmenu button {
   border: none;
@@ -739,6 +792,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-surface-2);
+  transform-origin: top left;          /* 从「+」按钮方向展开 */
+  animation: fb-menu-in 150ms var(--ease-out);
 }
 .d-label-menu > button {
   border: none;
@@ -864,6 +919,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @media (prefers-reduced-motion: reduce) {
   .fb-detail { animation: fb-panel-in-reduced var(--duration-fast) linear; }
   @keyframes fb-panel-in-reduced { from { opacity: 0 } to { opacity: 1 } }
+  .fb-detail.closing { animation: fb-panel-out-reduced var(--duration-fast) linear forwards; }
+  @keyframes fb-panel-out-reduced { from { opacity: 1 } to { opacity: 0 } }
+  .fb-ctxmenu, .d-label-menu { animation: fb-menu-in-reduced var(--duration-fast) linear; }
+  @keyframes fb-menu-in-reduced { from { opacity: 0 } to { opacity: 1 } }
+  .fb-other-list { animation: fb-slide-in-reduced var(--duration-fast) linear; }
+  @keyframes fb-slide-in-reduced { from { opacity: 0 } to { opacity: 1 } }
+  .fb-card.is-moving { animation: none; }        /* 脉冲属闪烁类，完整豁免；outline 静态保留 */
+  .fb-col { transition-property: background; }   /* outline-color 过渡一并豁免（保守侧） */
   .fb-card.is-settling { animation: none; }
   .fb-card, .col-list, .fb-col { transition-property: opacity; }
   .wc-btn, .fb-chip, .fb-viewtoggle button { transition-property: opacity; }
