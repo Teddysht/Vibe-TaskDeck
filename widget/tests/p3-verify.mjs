@@ -4,7 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 
 const server = http.createServer((req, res) => {
-  fs.readFile('D:/git/Vibe-TaskDeck/widget/dist/mini.html', (err, data) => {
+  fs.readFile('D:/git/taskboard-skill/widget/dist/mini.html', (err, data) => {
     if (err) { res.writeHead(404); res.end(); return; }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(data);
@@ -25,7 +25,7 @@ window.__TAURI_INTERNALS__ = {
 `;
 
 const chrome = spawn(process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', [
-  '--headless=new', '--remote-debugging-port=8495', '--user-data-dir=D:/git/Vibe-TaskDeck/widget/tests/.out/hp-p3',
+  '--headless=new', '--remote-debugging-port=8495', '--user-data-dir=D:/git/taskboard-skill/widget/tests/.out/hp-p3',
   '--no-first-run', '--no-default-browser-check', '--disable-gpu', 'about:blank',
 ], { stdio: 'ignore' });
 
@@ -34,7 +34,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 (async () => {
   await new Promise(r => server.listen(8478, r));
   let v;
-  for (let i = 0; i < 30 && !v; i++) { try { v = await fetch('http://127.0.0.1:8495/json/version').then(r => r.json()); } catch {} await sleep(500); }
+  // 60×500ms=30s：run-all 连续套件下系统 Chrome 实例堆积，冷启动可能超 15s
+  for (let i = 0; i < 60 && !v; i++) { try { v = await fetch('http://127.0.0.1:8495/json/version').then(r => r.json()); } catch {} await sleep(500); }
   const target = await fetch('http://127.0.0.1:8495/json/new?http://localhost:8478/mini.html', { method: 'PUT' }).then(r => r.json());
   const ws = new WebSocket(target.webSocketDebuggerUrl);
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });

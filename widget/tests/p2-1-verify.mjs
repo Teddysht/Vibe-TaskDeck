@@ -7,7 +7,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
 
-const ROOT = 'D:/git/Vibe-TaskDeck/widget/dist';
+const ROOT = 'D:/git/taskboard-skill/widget/dist';
 const PORT = 8475;
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const DEBUG_PORT = 8485;
