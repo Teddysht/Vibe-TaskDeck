@@ -4,7 +4,7 @@
 
 // 窗口尺寸（mini/large 与 Tauri main.rs 一致；快捷看板已移除——多列看板走全版第二窗口）
 export const SIZES = {
-  mini: { w: 280, h: 48 },
+  mini: { w: 280, h: 56 },
   large: { w: 360, h: 520 },
 } as const;
 

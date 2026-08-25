@@ -112,7 +112,7 @@ export default function Mini({ hidden, entering, onExpand }: Props) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 14l5-5 5 5" /></svg>
       </div>
       <div
-        className={`dots${seq.length > 8 ? ' dense' : ''}`}
+        className="dots"
         id="miniDots"
         onClick={(e) => {
           e.stopPropagation(); // 点指示点不触发展开
@@ -121,7 +121,7 @@ export default function Mini({ hidden, entering, onExpand }: Props) {
         }}
       >
         {seq.map((_, i) => (
-          <i key={i} className={i === idx ? 'on' : ''} data-i={i} />
+          <i key={i} className={i === idx ? 'on' : ''} data-i={i} title={`${i + 1}/${seq.length}`} />
         ))}
       </div>
     </div>

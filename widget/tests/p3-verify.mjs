@@ -57,8 +57,8 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     return { ...dots, labelFont: countsLabel ? getComputedStyle(countsLabel).fontSize : null };
   })()`);
   console.log('断言数据:', JSON.stringify(r));
-  const pass1 = r.onW !== null && Math.round(r.onW) === 10 && r.offW !== null && Math.round(r.offW) === 3;
-  console.log(pass1 ? 'PASS 指示点激活宽度 10px / 未激活 3px（scaleX 视觉等价）' : `FAIL 指示点宽度 on=${r.onW} off=${r.offW}`);
+  const pass1 = r.onW !== null && Math.round(r.onW) === 14 && r.offW !== null && Math.round(r.offW) === 6;
+  console.log(pass1 ? 'PASS 滑轨刻度激活段 14px / 未激活刻度 ~6px（scaleX 视觉等价）' : `FAIL 指示点宽度 on=${r.onW} off=${r.offW}`);
   const pass2 = r.labelFont === '10.5px';
   console.log(pass2 ? 'PASS font-xs 已生效 10.5px' : `FAIL font-xs: ${r.labelFont}`);
 

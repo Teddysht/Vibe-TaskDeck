@@ -32,7 +32,9 @@
 .mini .shape.done{background:var(--success)}
 .mini .shape.idle{border:1.5px solid var(--text-weak);background:transparent}
 .mini .shape.review{border:1.5px solid var(--accent);background:transparent}
-.mini .body{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px}
+/* 56px 高胶囊：正文组整体上移（顶部 padding 7px），与底部轮播带
+   （dots bottom:6px + 2.5px 高 ≈ 8.5px 带）之间保持 ≥6px 呼吸位 */
+.mini .body{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center;gap:2px;padding:5px 0 11px}
 .mini .body:hover .t{color:var(--text-primary)}
 .mini .t{font-size:var(--font-md);line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary);font-weight:500}
 .mini .meta{font-size:var(--font-sm);color:var(--text-weak);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-variant-numeric:tabular-nums;display:flex;align-items:center;gap:5px}
@@ -46,12 +48,21 @@
 .mini .expand{flex:0 0 auto;width:22px;height:22px;border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;color:var(--text-weak);cursor:pointer;-webkit-app-region:no-drag;transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out)}
 .mini .expand svg{width:14px;height:14px}
 .mini .expand:hover{background:var(--bg-surface-2);color:var(--text-primary)}
-/* 指示点：右下角独立停靠（不再居中悬浮压在 meta 行上）。任务多时
-   （>8 个）尺寸收一档防失控——密度随内容自适应，16px 内始终成组。 */
-.mini .dots{position:absolute;bottom:3px;right:12px;display:flex;gap:3px;align-items:center;-webkit-app-region:no-drag}
-.mini .dots.dense i{width:7px}                    /* 序列长时自动收紧（JS 按 seq 长度挂类） */
-/* 指示点用 scaleX 而非 width 过渡（避免 layout；P3 性能项） */
-.mini .dots i{width:10px;height:3px;border-radius:2px;background:var(--text-weak);opacity:.4;cursor:pointer;transform:scaleX(.3);transition:transform var(--duration-base) var(--ease-out),opacity var(--duration-base) var(--ease-out)}
+/* 轮播指示：滑轨刻度式（56px 高胶囊专属底部带，水平居中）。
+   视觉语义：一条等分细轨，当前段以品牌色点亮拉满，其余段短刻度；
+   点任意刻度直达对应任务。scaleX 过渡保留（P3 性能项，避免 layout）。 */
+.mini .dots{
+  position:absolute;bottom:6px;left:50%;transform:translateX(-50%);
+  display:flex;gap:4px;align-items:center;-webkit-app-region:no-drag;
+}
+.mini .dots i{
+  width:14px;height:2.5px;border-radius:2px;
+  background:var(--text-weak);opacity:.35;cursor:pointer;
+  transform:scaleX(.42);                    /* 未激活：短刻度（视觉宽 ~6px） */
+  transform-origin:center;
+  transition:transform var(--duration-base) var(--ease-out),opacity var(--duration-base) var(--ease-out),background var(--duration-base) var(--ease-out);
+}
+.mini .dots i:hover{opacity:.7}
 .mini .dots i.on{background:var(--accent);opacity:1;transform:scaleX(1)}
 
 /* ============ 大挂件（large） ============ */
