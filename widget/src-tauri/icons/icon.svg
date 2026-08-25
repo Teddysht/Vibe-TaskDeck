@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Vibe-TaskDeck 应用图标：任务板 + 状态点
+       语言与挂件 UI 同源——圆角方板（列容器）、横线（任务条）、
+       右下点亮状态点（胶囊状态点语义：活跃/进行中）。
+       底板 brand-600 深蓝紫，元素白色，托盘 16px 缩到细节不糊。 -->
+  <defs>
+    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#6e8bff"/>
+      <stop offset="1" stop-color="#4a63d6"/>
+    </linearGradient>
+  </defs>
+  <!-- 底板：圆角方（与窗口/列容器同语言，radius-lg 比例） -->
+  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#board)"/>
+  <!-- 三条任务线：长短递减（列表语义），首条已完成打勾 -->
+  <path d="M36 46 h56" stroke="#fff" stroke-width="10" stroke-linecap="round" opacity=".55"/>
+  <path d="M36 70 h40" stroke="#fff" stroke-width="10" stroke-linecap="round" opacity=".85"/>
+  <path d="M36 94 h28" stroke="#fff" stroke-width="10" stroke-linecap="round" opacity=".55"/>
+  <!-- 状态点：右下角点亮（胶囊「进行中」语义，实心白点+光晕） -->
+  <circle cx="98" cy="94" r="9" fill="#fff"/>
+  <circle cx="98" cy="94" r="15" fill="#fff" opacity=".25"/>
+</svg>
