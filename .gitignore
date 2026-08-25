@@ -1,0 +1,21 @@
+# Local agent and workspace state
+AGENTS.md
+.codex/
+.claudian/
+
+# Secrets and local configuration
+.env
+.env.*
+!.env.example
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Build and dependency output
+node_modules/
+dist/
+build/
+__pycache__/
+*.py[cod]
