@@ -27,7 +27,13 @@
 .mini.entering{opacity:0}
 .mini:hover{border-color:var(--border-strong)}
 .mini .shape{flex:0 0 auto;width:9px;height:9px;border-radius:50%}
-.mini .shape.progress{background:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+/* 进行中呼吸：光晕 3px↔5px 缓慢脉冲（与离线心跳同语言的活性信号，
+   但更安静——offline 是异常告警 1.4s 急促，progress 是常态 2.4s 平缓） */
+.mini .shape.progress{background:var(--accent);animation:shape-breath 2.4s var(--ease-out) infinite}
+@keyframes shape-breath{
+  0%,100%{box-shadow:0 0 0 3px var(--accent-soft)}
+  50%{box-shadow:0 0 0 5px var(--accent-soft)}
+}
 .mini .shape.blocked{background:var(--danger);box-shadow:0 0 0 3px var(--danger-bg)}
 .mini .shape.done{background:var(--success)}
 .mini .shape.idle{border:1.5px solid var(--text-weak);background:transparent}

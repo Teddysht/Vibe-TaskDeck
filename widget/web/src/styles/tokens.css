@@ -217,6 +217,8 @@ svg{display:block}
 @media (prefers-reduced-motion: reduce){
   /* 主题切换：色彩瞬切（功能不受损） */
   html{transition-duration:0ms}
+  /* 进行中状态点：呼吸降级为静态光晕（保留状态可见性，去脉冲） */
+  .mini .shape.progress{animation:none;box-shadow:0 0 0 3px var(--accent-soft)}
   /* 轮转切换 / 表单展开：只留淡入，去位移 */
   .mini .body.swap{animation:swap-reduced var(--duration-fast) linear}
   @keyframes swap-reduced{from{opacity:0}to{opacity:1}}
