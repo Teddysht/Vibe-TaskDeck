@@ -107,7 +107,7 @@ fn main() {
             let logical_w = physical_w / scale;
             let pos_x = (logical_w - 280.0 - 24.0).max(0.0);
             let mut builder = tauri::WebviewWindowBuilder::new(app, "main", tauri::WebviewUrl::App("mini.html".into()))
-                .title("dashi-taskboard 挂件")
+                .title("Vibe-TaskDeck 挂件")
                 .inner_size(280.0, 56.0)
                 .position(pos_x, 16.0)
                 .always_on_top(true)

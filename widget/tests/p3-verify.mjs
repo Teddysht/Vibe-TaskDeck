@@ -4,7 +4,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 
 const server = http.createServer((req, res) => {
-  fs.readFile('D:/git/taskboard-skill/widget/dist/mini.html', (err, data) => {
+  fs.readFile('D:/git/Vibe-TaskDeck/widget/dist/mini.html', (err, data) => {
     if (err) { res.writeHead(404); res.end(); return; }
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(data);
@@ -25,7 +25,7 @@ window.__TAURI_INTERNALS__ = {
 `;
 
 const chrome = spawn(process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe', [
-  '--headless=new', '--remote-debugging-port=8495', '--user-data-dir=D:/git/taskboard-skill/widget/tests/.out/hp-p3',
+  '--headless=new', '--remote-debugging-port=8495', '--user-data-dir=D:/git/Vibe-TaskDeck/widget/tests/.out/hp-p3',
   '--no-first-run', '--no-default-browser-check', '--disable-gpu', 'about:blank',
 ], { stdio: 'ignore' });
 

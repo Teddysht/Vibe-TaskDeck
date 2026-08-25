@@ -8,7 +8,7 @@
  *   · 退出码：0 成功 / 2 用法错误 / 3 环境不可用 / 4 API 错误 / 5 版本冲突(409)
  *
  * 数据库路径解析与挂件 Rust 数据层一致：
- *   CODEX_TASKBOARD_DATA_DIR > %APPDATA%\dashi-taskboard\taskboard.sqlite
+ *   VIBE_TASKDECK_DATA_DIR > %APPDATA%\Vibe-TaskDeck\taskboard.sqlite
  * （taskboard.py 会显式设置该变量指向 <repo>/.data，与挂件同库互通）
  *
  * 支持子集：project list/create、issue list/get/create/update/move/archive/restore、
@@ -297,16 +297,16 @@ function execute(parsed, overrides) {
 
 function resolveDbFile(overrides) {
   const env = overrides.env ?? process.env;
-  const configured = env.CODEX_TASKBOARD_DATA_DIR?.trim();
+  const configured = env.VIBE_TASKDECK_DATA_DIR?.trim();
   if (configured) {
     return path.resolve(configured, "taskboard.sqlite");
   }
   const appdata = env.APPDATA?.trim();
   if (appdata) {
-    return path.resolve(appdata, "dashi-taskboard", "taskboard.sqlite");
+    return path.resolve(appdata, "Vibe-TaskDeck", "taskboard.sqlite");
   }
   throw new TaskctlError(
-    "Cannot locate the taskboard data directory. Set CODEX_TASKBOARD_DATA_DIR.",
+    "Cannot locate the taskboard data directory. Set VIBE_TASKDECK_DATA_DIR.",
     { code: "SERVICE_UNAVAILABLE", exitCode: 3 },
   );
 }

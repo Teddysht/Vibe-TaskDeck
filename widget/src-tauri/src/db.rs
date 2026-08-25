@@ -74,10 +74,10 @@ pub fn open_database() -> Result<Connection, String> {
     Ok(conn)
 }
 
-/// 数据库路径：CODEX_TASKBOARD_DATA_DIR > %APPDATA%\dashi-taskboard
+/// 数据库路径：VIBE_TASKDECK_DATA_DIR > %APPDATA%\Vibe-TaskDeck
 /// （与 cli/taskctl-local.mjs、upstream server 的解析规则保持一致，三方同库）
 fn resolve_db_path() -> Result<PathBuf, String> {
-    if let Ok(dir) = std::env::var("CODEX_TASKBOARD_DATA_DIR") {
+    if let Ok(dir) = std::env::var("VIBE_TASKDECK_DATA_DIR") {
         let dir = dir.trim();
         if !dir.is_empty() {
             return Ok(PathBuf::from(dir).join("taskboard.sqlite"));
@@ -86,10 +86,10 @@ fn resolve_db_path() -> Result<PathBuf, String> {
     if let Ok(appdata) = std::env::var("APPDATA") {
         let appdata = appdata.trim();
         if !appdata.is_empty() {
-            return Ok(PathBuf::from(appdata).join("dashi-taskboard").join("taskboard.sqlite"));
+            return Ok(PathBuf::from(appdata).join("Vibe-TaskDeck").join("taskboard.sqlite"));
         }
     }
-    Err("无法定位数据目录：请设置 CODEX_TASKBOARD_DATA_DIR 环境变量".into())
+    Err("无法定位数据目录：请设置 VIBE_TASKDECK_DATA_DIR 环境变量".into())
 }
 
 /// 建表：4 张核心表 + 3 个索引，DDL 逐字对齐 upstream database.mjs #migrate()
@@ -1219,12 +1219,12 @@ pub fn delete_task(conn: &Connection, id: &str, version: i64) -> Result<Value, C
         Ok(()) => {
             conn.execute_batch("COMMIT")?;
             // 磁盘附件清理（ENOENT 容忍——上游同语义）
-            if let Some(data_dir) = std::env::var("CODEX_TASKBOARD_DATA_DIR").ok().filter(|s| !s.trim().is_empty())
+            if let Some(data_dir) = std::env::var("VIBE_TASKDECK_DATA_DIR").ok().filter(|s| !s.trim().is_empty())
                 .or_else(|| std::env::var("APPDATA").ok()) {
-                let base = if std::env::var("CODEX_TASKBOARD_DATA_DIR").ok().filter(|s| !s.trim().is_empty()).is_some() {
+                let base = if std::env::var("VIBE_TASKDECK_DATA_DIR").ok().filter(|s| !s.trim().is_empty()).is_some() {
                     std::path::PathBuf::from(data_dir)
                 } else {
-                    std::path::PathBuf::from(data_dir).join("dashi-taskboard")
+                    std::path::PathBuf::from(data_dir).join("Vibe-TaskDeck")
                 };
                 for attachment_id in &attachment_ids {
                     if let Some(safe) = sanitize_attachment_id(attachment_id) {
@@ -1445,7 +1445,7 @@ pub fn relations_of(conn: &Connection, id: &str) -> Value {
 
 /// 附件目录（与上游同位：<数据目录>/attachments；构造性安全——只存 UUID 文件名）
 fn attachments_dir() -> Option<std::path::PathBuf> {
-    let data_dir = std::env::var("CODEX_TASKBOARD_DATA_DIR")
+    let data_dir = std::env::var("VIBE_TASKDECK_DATA_DIR")
         .ok()
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
@@ -1453,7 +1453,7 @@ fn attachments_dir() -> Option<std::path::PathBuf> {
         .or_else(|| {
             std::env::var("APPDATA")
                 .ok()
-                .map(|d| std::path::PathBuf::from(d).join("dashi-taskboard"))
+                .map(|d| std::path::PathBuf::from(d).join("Vibe-TaskDeck"))
         })?;
     Some(data_dir.join("attachments"))
 }
@@ -1818,7 +1818,7 @@ mod tests {
     fn attachment_roundtrip_and_traversal_guard() {
         // 附件目录依赖数据目录环境变量（测试 shell 可能无 APPDATA）
         let tmp = std::env::temp_dir().join(format!("tb-att-test-{}", uuid::Uuid::new_v4()));
-        std::env::set_var("CODEX_TASKBOARD_DATA_DIR", &tmp);
+        std::env::set_var("VIBE_TASKDECK_DATA_DIR", &tmp);
         let conn = test_db();
         let task = create_task(&conn, "带附件", "todo", "none", None).unwrap();
         let id = task["id"].as_str().unwrap().to_string();

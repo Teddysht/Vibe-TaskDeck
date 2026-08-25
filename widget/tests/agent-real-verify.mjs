@@ -25,7 +25,7 @@ function taskctl(args) {
     if (!env.LOCALAPPDATA && env.USERPROFILE) env.LOCALAPPDATA = path.join(env.USERPROFILE, 'AppData', 'Local');
     // 挂件按真实层约定经 taskboard.py widget 启动（数据目录 <repo>/.data）；
     // taskctl 未显式指定时对齐同一目录，否则写入对挂件不可见（不同库）
-    if (!env.CODEX_TASKBOARD_DATA_DIR) env.CODEX_TASKBOARD_DATA_DIR = path.join(REPO, '.data');
+    if (!env.VIBE_TASKDECK_DATA_DIR) env.VIBE_TASKDECK_DATA_DIR = path.join(REPO, '.data');
     execFile('node', [path.join(REPO, 'cli', 'taskctl-local.mjs'), ...args], {
       timeout: 30000,
       env,

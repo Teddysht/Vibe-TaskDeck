@@ -1,29 +1,25 @@
-# taskboard-skill
+# Vibe-TaskDeck
 
-dashi-taskboard（Codex Taskboard）任务看板的 Mana 接入封装，**纯客户端架构**：桌面挂件（Tauri 内嵌页面 + Rust 直连 SQLite）与 `taskctl` CLI（Node 直连 SQLite）共用同一数据库文件，无需 HTTP 服务、不打开浏览器。全版看板（七列拖拽/详情编辑/筛选/归档）为挂件第二窗口本地页面，与挂件同栈，无任何 Node server 依赖。
+A compact skill for turning task lists into a clear, actionable board.
+
+**AI-native 纯客户端任务看板**：桌面挂件（Tauri 2 内嵌页面 + Rust 直连 SQLite）与 `taskctl` CLI 共用同一数据库文件，无需 HTTP 服务、不打开浏览器。挂件三视图：胶囊轮播（常驻扫一眼）→ 大面板（列表/新建/流转）→ 全版看板（第二窗口：七列拖拽、详情编辑、筛选搜索、归档面板、undo）。AI 助手经 taskctl 建任务，人看挂件随时扫进度——任务归属（thread-id）与乐观并发（version）保证人机对同一任务的操作互不打架。
 
 ## 仓库结构
 
 ```
-taskboard-skill/
-├── skill/                 # Mana 侧封装（本仓库的核心）
+TaskDeck/
+├── skill/                 # AI 侧封装（本仓库的核心）
 │   ├── taskboard.py       #   挂件启动 / taskctl 本地直连 / 清理入口
 │   ├── SKILL.md           #   skill 文档（工作流、命令、状态机）
 │   └── config.example.json#   配置示例
 ├── cli/
-│   └── taskctl-local.mjs  # taskctl 本地模式：直连 SQLite（复用上游 TaskboardDatabase）
-├── widget/                # 桌面挂件（纯客户端：置顶胶囊 + 展开大挂件 + 全版看板第二窗口）
+│   └── taskctl-local.mjs  # taskctl 本地模式：直连 SQLite
+├── widget/                # 桌面挂件（Windows，Tauri 2）
 │   ├── web/src/           #   挂件页面源码（React 19 + Tailwind v4 + shadcn 主题层 + zustand）
 │   ├── vite.config.ts     #   双通道构建：mini.html + fullboard.html（编译期嵌入 exe）
 │   └── src-tauri/         #   Tauri 2 壳（内嵌页面 + rusqlite 数据层 + 窗口控制）
-└── upstream/              # 上游 Codex Taskboard 源码（第三方，Apache 2.0，不修改；仅作语义参考）
-    └── ...                #   见 upstream/README.md 与 upstream/LICENSE
+└── PRODUCT.md             # 产品定位与约束
 ```
-
-## 来源与授权
-
-- `upstream/` 目录是第三方开源项目 [chuspeeism/dashi-taskboard](https://github.com/chuspeeism/dashi-taskboard)（Codex Taskboard）的源码快照，遵循 **Apache License 2.0**，完整许可证见 [`upstream/LICENSE`](upstream/LICENSE)。自研全版看板的交互语义（拖拽开缝/undo 栈/筛选）以其为对照源，运行时不依赖它。
-- `skill/`、`cli/`、`widget/` 目录是本文作者为接入 Mana 编写的封装与挂件，不复制或修改上游源码。
 
 ## 快速开始
 
@@ -35,7 +31,6 @@ python skill/taskboard.py taskctl project list
 python skill/taskboard.py taskctl issue create --project local --title "第一个任务" --thread-id my-session
 
 # 2) 构建并启动桌面挂件（两步顺序不可颠倒；改动挂件 web 源码后需两步重跑）
-#    挂件视图：胶囊轮播 → 大面板（列表/新建/流转）→ 全版看板（第二窗口，秒开）
 cd widget; npm install; npm run build; cd src-tauri; cargo build --release --target x86_64-pc-windows-msvc; cd ../..
 python skill/taskboard.py widget
 ```
@@ -56,8 +51,17 @@ python skill/taskboard.py widget
 
 ## 数据与互通
 
-- 数据库：`CODEX_TASKBOARD_DATA_DIR`（默认 `<repo>/.data`）下的 `taskboard.sqlite`；挂件独立双击运行时默认 `%APPDATA%\dashi-taskboard`。
+- 数据库：`VIBE_TASKDECK_DATA_DIR`（默认 `<repo>/.data`）下的 `taskboard.sqlite`；挂件独立双击运行时默认 `%APPDATA%\Vibe-TaskDeck`。
 - 双端（挂件 Rust / taskctl Node）以 WAL + busy_timeout=5000 打开同一文件，可并发读写；挂件感知外部写入靠事件广播 + 约 5 秒轮询兜底。
+
+## 环境变量
+
+| 变量 | 说明 | 默认 |
+| --- | --- | --- |
+| `VIBE_TASKDECK_DATA_DIR` | 任务数据库目录 | `<repo>/.data`（挂件独立运行时 `%APPDATA%\Vibe-TaskDeck`） |
+| `VIBE_TASKDECK_RUNTIME_DIR` | 挂件 PID/状态运行目录 | `<repo>/.tmpfiles/Vibe-TaskDeck` |
+| `VIBE_TASKDECK_WIDGET_DIR` / `VIBE_TASKDECK_WIDGET_EXE` | 挂件源码目录 / 可执行文件路径 | `widget/` 自动探测 |
+| `WEBVIEW2_CDP_PORT` | WebView2 CDP 调试端口（端到端测试用） | 不设 |
 
 ## 测试
 
@@ -68,6 +72,8 @@ cd tests; node run-all.mjs      # mock 层 10 套件（无头 Chrome + mock Taur
 WIDGET_CDP_PORT=8490 node run-all.mjs
 ```
 
-## 隔离边界
+## Repository hygiene
 
-skill 只管理自己写入运行目录 `widget-state.json` 的进程，不按端口扫描或误杀其他进程；清理仅作用于隔离运行目录与显式指定的数据文件，不触碰上游源码、Git 分支、系统服务或全局 npm 配置。
+- Keep credentials, local settings, and generated output out of version control.
+- Keep changes focused and document user-visible behavior in this README.
+- Use short-lived branches for non-trivial work.

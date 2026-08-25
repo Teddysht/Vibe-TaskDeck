@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""dashi-taskboard 纯客户端模式的轻量包装器。
+"""Vibe-TaskDeck 纯客户端模式的轻量包装器。
 
 只管理本脚本写入 runtimeDir/widget-state.json 的挂件进程；
 不按端口扫描或杀掉其他进程。全版看板为挂件内嵌本地页面
@@ -19,7 +19,7 @@ import sys
 import time
 
 MIN_NODE = (22, 5)
-WIDGET_EXE_NAME = "dashi-taskboard-widget.exe"
+WIDGET_EXE_NAME = "taskdeck-widget.exe"
 
 
 def project_root() -> Path:
@@ -27,7 +27,7 @@ def project_root() -> Path:
 
     兼容两种布局：
       · 开发布局 <repo>/skill/taskboard.py → 仓库根（含 .git）
-      · 安装布局 <工程>/.claude/skills/dashi-taskboard/taskboard.py → 工程根
+      · 安装布局 <工程>/.claude/skills/Vibe-TaskDeck/taskboard.py → 工程根
     """
     current = Path(__file__).resolve().parent
     for parent in [current, *current.parents]:
@@ -37,10 +37,10 @@ def project_root() -> Path:
 
 
 def runtime_dir(root: Path) -> Path:
-    configured = os.environ.get("DASHI_TASKBOARD_RUNTIME_DIR")
+    configured = os.environ.get("VIBE_TASKDECK_RUNTIME_DIR")
     if configured:
         return Path(configured).expanduser().resolve()
-    return root / ".tmpfiles" / "dashi-taskboard"
+    return root / ".tmpfiles" / "Vibe-TaskDeck"
 
 
 def widget_state_path(root: Path) -> Path:
@@ -51,9 +51,9 @@ def data_dir(root: Path) -> Path:
     """任务数据目录：环境变量优先，默认 <repo>/.data。
 
     挂件（Rust 直连 SQLite）与 taskctl-local（Node 直连）共用同一数据库；
-    启动两方时都应设置 CODEX_TASKBOARD_DATA_DIR。
+    启动两方时都应设置 VIBE_TASKDECK_DATA_DIR。
     """
-    configured = os.environ.get("CODEX_TASKBOARD_DATA_DIR")
+    configured = os.environ.get("VIBE_TASKDECK_DATA_DIR")
     if configured:
         return Path(configured).expanduser().resolve()
     return root / ".data"
@@ -78,7 +78,7 @@ def emit(value, as_json: bool) -> None:
 
 def resolve_widget_dir(args, root: Path) -> Path | None:
     """解析挂件源码目录（用于定位构建产物与可执行文件）。"""
-    configured = getattr(args, "widget_dir", None) or os.environ.get("DASHI_TASKBOARD_WIDGET_DIR")
+    configured = getattr(args, "widget_dir", None) or os.environ.get("VIBE_TASKDECK_WIDGET_DIR")
     if configured:
         return Path(configured).expanduser().resolve()
     default = root / "widget"
@@ -87,7 +87,7 @@ def resolve_widget_dir(args, root: Path) -> Path | None:
 
 def resolve_widget_exe(args, root: Path) -> Path | None:
     """解析挂件可执行文件（用于 widget 启动）。"""
-    configured = getattr(args, "widget_exe", None) or os.environ.get("DASHI_TASKBOARD_WIDGET_EXE")
+    configured = getattr(args, "widget_exe", None) or os.environ.get("VIBE_TASKDECK_WIDGET_EXE")
     if configured:
         return Path(configured).expanduser().resolve()
     widget_dir = resolve_widget_dir(args, root)
@@ -222,7 +222,7 @@ def taskctl(args, root: Path) -> int:
         emit({"ok": False, "error": f"未找到 {script}"}, args.json)
         return 2
     env = os.environ.copy()
-    env.setdefault("CODEX_TASKBOARD_DATA_DIR", str(data_dir(root)))
+    env.setdefault("VIBE_TASKDECK_DATA_DIR", str(data_dir(root)))
     result = subprocess.run(["node", str(script), *args.taskctl_args], cwd=str(root), env=env, text=True)
     return result.returncode
 
@@ -230,7 +230,7 @@ def taskctl(args, root: Path) -> int:
 def widget_start(args, root: Path) -> int:
     exe = resolve_widget_exe(args, root)
     if not exe:
-        emit({"ok": False, "error": "未找到挂件可执行文件，请先构建（--widget-exe 或 DASHI_TASKBOARD_WIDGET_EXE）。"}, args.json)
+        emit({"ok": False, "error": "未找到挂件可执行文件，请先构建（--widget-exe 或 VIBE_TASKDECK_WIDGET_EXE）。"}, args.json)
         return 2
     # 页面为编译期内嵌资源（frontendDist）：mini.html 与 fullboard.html 双产物，
     # 由 widget 下 npm run build 生成，随后 cargo build 嵌入 exe；运行期无需注入。
@@ -242,7 +242,7 @@ def widget_start(args, root: Path) -> int:
         emit({"ok": False, "error": "缺少 widget/dist/{mini,fullboard}.html，请先在 widget 下运行 npm run build 再 cargo build。"}, args.json)
         return 2
     env = os.environ.copy()
-    env.setdefault("CODEX_TASKBOARD_DATA_DIR", str(data_dir(root)))
+    env.setdefault("VIBE_TASKDECK_DATA_DIR", str(data_dir(root)))
     creationflags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     try:
         proc = subprocess.Popen([str(exe)], env=env, creationflags=creationflags)
@@ -277,10 +277,10 @@ def widget_stop(args, root: Path) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="管理 dashi-taskboard 纯客户端模式（挂件 + 本地 taskctl）")
+    parser = argparse.ArgumentParser(description="管理 Vibe-TaskDeck 纯客户端模式（挂件 + 本地 taskctl）")
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--widget-dir", help="挂件源码目录，也可用 DASHI_TASKBOARD_WIDGET_DIR")
-    parser.add_argument("--widget-exe", help="挂件可执行文件，也可用 DASHI_TASKBOARD_WIDGET_EXE")
+    parser.add_argument("--widget-dir", help="挂件源码目录，也可用 VIBE_TASKDECK_WIDGET_DIR")
+    parser.add_argument("--widget-exe", help="挂件可执行文件，也可用 VIBE_TASKDECK_WIDGET_EXE")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("status")
     sub.add_parser("stop")

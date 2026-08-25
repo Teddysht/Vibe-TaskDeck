@@ -3,12 +3,9 @@ __pycache__/
 *.pyc
 *.pyo
 
-# 上游运行/构建产物（上游自带 .gitignore 亦生效，此处额外兜底）
-upstream/node_modules/
-upstream/dist/
-upstream/.data/
-upstream/.wrangler/
-upstream/.dev.vars*
+# upstream/：第三方 Vibe-TaskDeck 源码快照（Apache 2.0）——本地语义参考，
+# 已从仓库移除不随迁移；整目录忽略防止误纳
+upstream/
 
 # widget 构建产物
 widget/dist/

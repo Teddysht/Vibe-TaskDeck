@@ -1,7 +1,7 @@
 [package]
-name = "dashi-taskboard-widget"
+name = "taskdeck-widget"
 version = "0.1.0"
-description = "dashi-taskboard 桌面挂件（置顶胶囊 + 展开面板，纯客户端直连 SQLite）"
+description = "Vibe-TaskDeck 桌面挂件（置顶胶囊 + 展开面板，纯客户端直连 SQLite）"
 edition = "2021"
 rust-version = "1.88"
 

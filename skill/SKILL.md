@@ -1,17 +1,17 @@
 ---
-name: dashi-taskboard
-description: 本地试用 dashi-taskboard 任务看板（纯客户端）。用于从 Mana 启动/停止桌面挂件、查询状态，或用 taskctl 本地直连 SQLite 完整操作看板（建任务/认领/改状态/评论）；无需 HTTP 服务与浏览器，运行产物集中在隔离目录，可随时清理。
+name: Vibe-TaskDeck
+description: 本地试用 Vibe-TaskDeck 任务看板（纯客户端）。用于从 Mana 启动/停止桌面挂件、查询状态，或用 taskctl 本地直连 SQLite 完整操作看板（建任务/认领/改状态/评论）；无需 HTTP 服务与浏览器，运行产物集中在隔离目录，可随时清理。
 ---
 
-# dashi-taskboard 本地任务看板
+# Vibe-TaskDeck 本地任务看板
 
 这是一个**本地、可撤销**的试用 Skill。它不修改 Unity 业务代码，不安装全局依赖，也不接管已有的 taskboard 进程。
 
-**纯客户端架构**：桌面挂件（Tauri 内嵌页面 + Rust 直连 SQLite）与 taskctl（Node 直连 SQLite）共用同一数据库文件（WAL 模式），互相同步；不需要启动任何 HTTP 服务，也不打开浏览器。数据默认存于 `<repo>/.data/taskboard.sqlite`（可用 `CODEX_TASKBOARD_DATA_DIR` 覆盖）。
+**纯客户端架构**：桌面挂件（Tauri 内嵌页面 + Rust 直连 SQLite）与 taskctl（Node 直连 SQLite）共用同一数据库文件（WAL 模式），互相同步；不需要启动任何 HTTP 服务，也不打开浏览器。数据默认存于 `<repo>/.data/taskboard.sqlite`（可用 `VIBE_TASKDECK_DATA_DIR` 覆盖）。
 
 ## 快速使用
 
-在仓库根目录执行（运行目录可用 `DASHI_TASKBOARD_RUNTIME_DIR` 指定）：
+在仓库根目录执行（运行目录可用 `VIBE_TASKDECK_RUNTIME_DIR` 指定）：
 
 ```powershell
 # 看板操作（taskctl 本地直连 SQLite，无需启动任何服务）
@@ -50,11 +50,11 @@ cd widget; npm install; npm run build          # 产出 dist/{mini,fullboard}.ht
 cd src-tauri; cargo build --release --target x86_64-pc-windows-msvc
 ```
 
-产物：`widget/src-tauri/target/x86_64-pc-windows-msvc/release/dashi-taskboard-widget.exe`（WebView2 静态链接，单 exe 可分发）。
+产物：`widget/src-tauri/target/x86_64-pc-windows-msvc/release/taskdeck-widget.exe`（WebView2 静态链接，单 exe 可分发）。
 
 ## 数据位置与互通
 
-- 数据库：`CODEX_TASKBOARD_DATA_DIR`（taskboard.py 自动设为 `<repo>/.data`）下的 `taskboard.sqlite`；挂件独立运行（不经 taskboard.py）时默认 `%APPDATA%\dashi-taskboard`。
+- 数据库：`VIBE_TASKDECK_DATA_DIR`（taskboard.py 自动设为 `<repo>/.data`）下的 `taskboard.sqlite`；挂件独立运行（不经 taskboard.py）时默认 `%APPDATA%\Vibe-TaskDeck`。
 - 双端同库：挂件（Rust）与 taskctl-local（Node）都以 WAL + busy_timeout=5000 打开同一文件，可并发读写。
 
 ## 任务状态与优先级
@@ -110,8 +110,8 @@ taskctl 的写操作要求归属到一个会话。Mana 场景没有 `CODEX_THREA
 
 ## 清理边界
 
-- 运行目录（日志、PID、状态）：默认 `<repo>/.tmpfiles/dashi-taskboard`（可用 `DASHI_TASKBOARD_RUNTIME_DIR` 覆盖）。`clean --purge` 删除该目录。
-- 任务数据：`<repo>/.data/taskboard.sqlite`（或 `CODEX_TASKBOARD_DATA_DIR` 指定位置）。**`clean` 默认不删除任务数据**；需要彻底清空任务时用 `clean --purge-data`（仅删除 taskboard.sqlite / -wal / -shm）。
+- 运行目录（日志、PID、状态）：默认 `<repo>/.tmpfiles/Vibe-TaskDeck`（可用 `VIBE_TASKDECK_RUNTIME_DIR` 覆盖）。`clean --purge` 删除该目录。
+- 任务数据：`<repo>/.data/taskboard.sqlite`（或 `VIBE_TASKDECK_DATA_DIR` 指定位置）。**`clean` 默认不删除任务数据**；需要彻底清空任务时用 `clean --purge-data`（仅删除 taskboard.sqlite / -wal / -shm）。
 - 绝不删除上游源码、Unity 工程、Git 分支或 worktree；不修改系统服务、注册表、全局 npm 配置或浏览器持久化配置。
 
 “不留痕”仅指本次试用在工程侧的进程、日志、缓存和隔离数据；操作系统或上游服务自身可能保留外部记录。

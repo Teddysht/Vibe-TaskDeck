@@ -347,7 +347,7 @@ pub async fn open_full_board(app: AppHandle) -> Result<serde_json::Value, db::Co
             "fullboard",
             tauri::WebviewUrl::App("fullboard.html".into()),
         )
-        .title("dashi-taskboard 全版看板")
+        .title("Vibe-TaskDeck 全版看板")
         .inner_size(1280.0, 800.0)
         .center()
         .min_inner_size(900.0, 520.0)
@@ -379,7 +379,7 @@ pub async fn open_full_board(app: AppHandle) -> Result<serde_json::Value, db::Co
             if let Ok(local) = std::env::var("LOCALAPPDATA") {
                 builder = builder.data_directory(
                     std::path::PathBuf::from(local)
-                        .join("com.dashi.taskboard-widget")
+                        .join("com.vibe.taskdeck-widget")
                         .join("fullboard-data"),
                 );
             }

@@ -1,0 +1,9 @@
+{
+  "source": "F:/vibe-taskdeck-src",
+  "host": "127.0.0.1",
+  "port": 47823,
+  "runtimeDir": "F:/vibe-taskdeck-runtime",
+  "healthPath": "/",
+  "startCommand": ["npm", "start"],
+  "taskctlCommand": ["npm", "run", "taskctl", "--"]
+}
