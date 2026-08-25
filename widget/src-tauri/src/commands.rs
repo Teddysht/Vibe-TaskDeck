@@ -355,7 +355,12 @@ pub async fn open_full_board(app: AppHandle) -> Result<serde_json::Value, db::Co
         // 避免系统亮色标题栏与暗色 UI 的割裂。shadow(true) 保留 DWM 窗口阴影
         // （Windows 无框窗口默认丢阴影）；标题栏拖拽/最大化/关闭由前端实现。
         .decorations(false)
-        .shadow(true);
+        .shadow(true)
+        // HTML5 drag-and-drop 修复：wry 默认给 WebView2 注册 OS 级 OLE
+        // drop target（文件拖放用），会吞掉页面内的 HTML5 DnD——看板卡片
+        // 拖拽在真机上完全无反应（e2e dispatchEvent 模拟不经过 OLE 层，
+        // 故测试全绿掩盖了此问题）。挂件无文件拖放需求，直接关闭。
+        .disable_drag_drop_handler();
         // WebView2 限制：同进程内所有环境的 additional_browser_arguments 必须
         // 完全一致。主窗在 WEBVIEW2_CDP_PORT 下设了 --remote-debugging-port，
         // 本窗口必须带同样参数，否则环境创建失败（窗口假死消失，实测）。
