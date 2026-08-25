@@ -14,6 +14,9 @@ interface Props {
   onExpand: () => void;
 }
 
+// 轮播指示可见窗口大小（序列超此时窗口化：当前项居中 + 两端渐隐）
+const WINDOW = 7;
+
 export default function Mini({ hidden, entering, onExpand }: Props) {
   const online = useAppStore((s) => s.online);
   const tasks = useAppStore((s) => s.tasks);
@@ -111,6 +114,9 @@ export default function Mini({ hidden, entering, onExpand }: Props) {
       >
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 14l5-5 5 5" /></svg>
       </div>
+      {/* 轮播指示：窗口化滑轨（业界标准做法，对齐 Safari 标签页/iOS 页码点）。
+          序列 ≤WINDOW 段时完整显示；超限只显示当前项 ±邻域共 WINDOW 段，
+          两端渐隐遮罩暗示序列延伸。刻度总数恒定，任意序列长度永不贴边。 */}
       <div
         className="dots"
         id="miniDots"
@@ -120,9 +126,28 @@ export default function Mini({ hidden, entering, onExpand }: Props) {
           if (i !== undefined) setIdx(Number(i));
         }}
       >
-        {seq.map((_, i) => (
-          <i key={i} className={i === idx ? 'on' : ''} data-i={i} title={`${i + 1}/${seq.length}`} />
-        ))}
+        {(() => {
+          // 计算可见窗口 [start, start+WINDOW)，当前项尽量居中
+          const half = Math.floor(WINDOW / 2);
+          let start = Math.max(0, Math.min(idx - half, seq.length - WINDOW));
+          const visible = seq.length <= WINDOW
+            ? seq.map((_, i) => i)
+            : Array.from({ length: WINDOW }, (_, k) => start + k);
+          const windowed = seq.length > WINDOW;
+          return visible.map((i) => (
+            <i
+              key={i}
+              className={[
+                i === idx ? 'on' : '',
+                // 窗口两端且非序列首尾 → 渐隐刻度（暗示还有更多）
+                windowed && i === start && start > 0 ? 'fade-l' : '',
+                windowed && i === start + WINDOW - 1 && i < seq.length - 1 ? 'fade-r' : '',
+              ].filter(Boolean).join(' ')}
+              data-i={i}
+              title={windowed ? `第 ${i + 1} 个，共 ${seq.length} 个任务` : `${i + 1}/${seq.length}`}
+            />
+          ));
+        })()}
       </div>
     </div>
   );

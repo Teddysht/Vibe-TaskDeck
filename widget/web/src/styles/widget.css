@@ -64,6 +64,9 @@
 }
 .mini .dots i:hover{opacity:.7}
 .mini .dots i.on{background:var(--accent);opacity:1;transform:scaleX(1)}
+/* 窗口化两端渐隐刻度：半透明 + 更短（暗示序列在窗口外延伸） */
+.mini .dots i.fade-l,.mini .dots i.fade-r{opacity:.18;transform:scaleX(.25)}
+.mini .dots i.fade-l:hover,.mini .dots i.fade-r:hover{opacity:.6}   /* 仍可点选直达 */
 
 /* ============ 大挂件（large） ============ */
 .large{
