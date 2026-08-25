@@ -71,16 +71,17 @@ export default function Large({ hidden, entering, leaving, onCollapse }: Props) 
           <div className="sub" id="projName">{proj?.name || '—'}</div>
         </div>
         <div className="sp" />
-        {/* 全版看板入口（原快捷看板位；快捷看板移除后唯一看板入口） */}
+        {/* 全版看板入口（原快捷看板位；快捷看板移除后唯一看板入口）。
+            图标=四角展开（挂件→全版的空间扩张；外链箭头会误读为跳转外部） */}
         <div
-          className={`ic${boardBusy ? ' spin' : ''}`}
+          className={`ic${boardBusy ? ' busy' : ''}`}
           id="viewToggle"
           title="打开全版看板（新窗口）"
           role="button"
           tabIndex={0}
           onClick={onOpenFullBoard}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M10 14L21 3" /><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" /></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M15 3h6v6" /><path d="M9 21H3v-6" /><path d="M21 3l-7 7" /><path d="M3 21l7-7" /></svg>
         </div>
         <ThemeToggle className="ic" />
         <div className="ic" id="collapseBtn" title="收起" role="button" tabIndex={0} onClick={onCollapse}>

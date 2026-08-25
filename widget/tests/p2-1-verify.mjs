@@ -101,9 +101,9 @@ async function main() {
     return { title: v.title, hasRect: !!v.querySelector('rect'), hasPath: !!v.querySelector('path'), pathCount: v.querySelectorAll('path').length };
   })()`);
 
-  // 快捷看板已移除：viewToggle 即全版看板入口（外链图标 = 3 条 path，无 rect）
+  // 快捷看板已移除：viewToggle 即全版看板入口（四角展开图标 = 4 条 path，无 rect）
   const s1 = await readToggle();
-  check('P2-1a viewToggle 为全版看板入口（外链图标 path×3）', s1.hasRect === false && s1.pathCount === 3, JSON.stringify(s1));
+  check('P2-1a viewToggle 为全版看板入口（展开图标 path×4）', s1.hasRect === false && s1.pathCount === 4, JSON.stringify(s1));
   check('P2-1b viewToggle title 含「全版看板」', s1.title.includes('全版看板'), `title="${s1.title}"`);
 
   // 点击 → open_full_board 调用（mock 层返回成功 → toast「全版看板已打开」）

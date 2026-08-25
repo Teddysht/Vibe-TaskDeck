@@ -184,9 +184,12 @@
 
 /* 通用 toast 已上移至 tokens.css 全局段（fullboard 端共享；三端同源） */
 
-/* 全版看板入口加载态（图标缓转） */
-.large .ic.spin svg{animation:spin 1s linear infinite}
-@keyframes spin{to{transform:rotate(360deg)}}
+/* 全版看板入口 busy 态：opacity 呼吸（本地开窗往返仅几百毫秒，回转型
+   加载圈语义过重，且非回转体图标转起来是公转乱晃；脉冲对任意字形成立，
+   是「正在工作」的最小可辨识反馈。cursor:progress 承接被守卫吞掉的点击） */
+.large .ic.busy{cursor:progress}
+.large .ic.busy svg{animation:icon-pulse 1s var(--ease-out) infinite}
+@keyframes icon-pulse{0%,100%{opacity:1}50%{opacity:.45}}
 
 /* ============ 任务详情（L3-本机：详情+评论，覆盖式视图） ============ */
 .large{position:relative}                      /* .detail 绝对定位的包含块 */
