@@ -1,9 +1,9 @@
 /* ============================================================
- * 归档任务侧栏 —— 对齐 upstream OtherTasksPanel：
+ * 归档任务弹窗 —— 顶栏入口 + 右侧 Sheet（对齐详情面板同一语言）：
  * 展示 archivedAt 非空的任务，支持恢复（restore_task）与永久删除
- * （delete_task，仅归档可删）。折叠态收纳在右侧边栏。
+ * （delete_task，仅归档可删）。
  * ============================================================ */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { invoke } from '../../lib/tauri';
 import { errMsg, showToast } from '../../lib/toast';
 import { STATUS_LABEL } from '../../lib/types';
@@ -12,11 +12,26 @@ import { useBoardStore } from '../store/useBoardStore';
 import { loadBoardData } from '../api';
 import { pushUndo } from '../store/undoStack';
 
-export default function OtherTasksPanel() {
-  const [open, setOpen] = useState(false);
+export default function OtherTasksPanel({
+  open,
+  onClose,
+}: {
+  open: boolean;
+  onClose: () => void;
+}) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const tasks = useBoardStore((s) => s.tasks);
   const archived = tasks.filter((t) => t.archivedAt);
+
+  // Esc 关闭（与详情面板同款契约）
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, onClose]);
 
   async function restore(task: Task) {
     setBusyId(task.id);
@@ -52,37 +67,42 @@ export default function OtherTasksPanel() {
     }
   }
 
+  if (!open) return null;
+
   return (
-    <div className={`fb-other${open ? ' open' : ''}`}>
-      <button className="fb-other-toggle" onClick={() => setOpen((v) => !v)}>
-        归档 {archived.length}
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d={open ? 'M15 18l-6-6 6-6' : 'M9 18l6-6-6-6'} />
-        </svg>
-      </button>
-      {open && (
-        <div className="fb-other-list">
-          {archived.map((t) => (
-            <div key={t.id} className="fb-other-item" data-task-id={t.id}>
-              <span className="id">{t.identifier}</span>
-              <span className="title" title={t.title}>{t.title}</span>
-              <span className="status">{STATUS_LABEL[t.status] || t.status}</span>
-              <button
-                disabled={busyId === t.id}
-                title="恢复到看板"
-                onClick={() => restore(t)}
-              >恢复</button>
-              <button
-                className="danger"
-                disabled={busyId === t.id}
-                title="永久删除（不可撤销）"
-                onClick={() => remove(t)}
-              >删除</button>
-            </div>
-          ))}
-          {archived.length === 0 && <div className="fb-other-empty">没有归档任务</div>}
-        </div>
-      )}
-    </div>
+    <aside className="fb-archive" aria-label="归档任务">
+      <header className="d-hd">
+        <span className="d-id">归档 {archived.length > 0 ? `· ${archived.length}` : ''}</span>
+        <span className="sp" />
+        <button className="d-close" title="关闭（Esc）" aria-label="关闭归档" onClick={onClose}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      </header>
+      <div className="fb-archive-body">
+        {archived.map((t) => (
+          <div key={t.id} className="fb-archive-item" data-task-id={t.id}>
+            <span className="id">{t.identifier}</span>
+            <span className="title" title={t.title}>{t.title}</span>
+            <span className="status">
+              <span className={`col-dot st-${t.status}`} aria-hidden="true" />
+              {STATUS_LABEL[t.status] || t.status}
+            </span>
+            <button
+              className="act restore"
+              disabled={busyId === t.id}
+              title="恢复到看板"
+              onClick={() => restore(t)}
+            >恢复</button>
+            <button
+              className="act danger"
+              disabled={busyId === t.id}
+              title="永久删除（不可撤销）"
+              onClick={() => remove(t)}
+            >删除</button>
+          </div>
+        ))}
+        {archived.length === 0 && <div className="fb-archive-empty">没有归档任务</div>}
+      </div>
+    </aside>
   );
 }

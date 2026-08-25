@@ -30,11 +30,18 @@ export default function IssueListView({ onRowClick }: { onRowClick: (task: Task)
           <div key={t.id} className="fb-list-row" data-task-id={t.id} onClick={() => onRowClick(t)}>
             <span className="c-id">{t.identifier}</span>
             <span className="c-title">
-              {t.creatorType === 'agent' && <span className="ag" title="AI 会话创建">AI</span>}
+              {t.creatorType === 'agent' && <span className="ag" title="AI 会话创建">AG</span>}
               {t.title}
             </span>
-            <span className="c-status">{STATUS_LABEL[t.status] || t.status}</span>
-            <span className="c-pri">{t.priority !== 'none' ? PRI_LABEL[t.priority] : '—'}</span>
+            <span className="c-status">
+              <span className={`col-dot st-${t.status}`} aria-hidden="true" />
+              {STATUS_LABEL[t.status] || t.status}
+            </span>
+            <span className="c-pri">
+              {t.priority !== 'none'
+                ? <span className={`pri-chip pri-${t.priority}`}>{PRI_LABEL[t.priority]}</span>
+                : '—'}
+            </span>
             <span className={`c-due${isOverdue(t.dueDate) && t.status !== 'done' ? ' overdue' : ''}`}>
               {shortDate(t.dueDate) || '—'}
             </span>

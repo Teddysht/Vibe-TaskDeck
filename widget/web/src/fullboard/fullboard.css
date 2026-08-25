@@ -9,16 +9,36 @@
 
 html, body, #root { height: 100%; }
 body {
-  background: var(--bg-canvas);
+  background: transparent;   /* 透明窗口（挂件同款）：圆角靠 .fb-root 裁剪 */
   user-select: none;
   line-height: normal;
 }
 
-/* 键盘可达（对齐挂件 widget.css 同一焦点环契约） */
+/* ============ 根容器：窗口级圆角（与挂件 .mini/.large 同一语言） ============
+   transparent 窗口 + 根 border-radius 裁出圆角；1px 描边补透明窗口丢失的
+   轮廓（DWM shadow 只给外阴影）。最大化时归零——贴边窗口圆角会切出缺口。 */
+.fb-root {
+  height: 100%;
+  background: var(--bg-canvas);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  /* 字号体系升档（原型口径：正文/控件 12.5px、详情标题 16px）——
+     只覆写 fb-root 子树，挂件端 tokens 原值不受影响 */
+  --font-sm: 12.5px;
+  --font-md: 12.5px;
+  --font-lg: 16px;
+}
+.fb-root.maximized {
+  border-radius: 0;
+  border: none;
+}
+
+/* 键盘可达（shadcn 焦点环口径：ring 色半透明 + 外扩 1px） */
 button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible,
 [role="button"]:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
+  outline: 2px solid var(--fb-ring);
+  outline-offset: 1px;
 }
 
 /* ============ 无框标题栏（语言对齐挂件 .hd） ============ */
@@ -26,9 +46,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 10px 10px 10px 14px;
+  padding: 8px 8px 8px 14px;
   border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-surface);
+  background: var(--bg-canvas);   /* 标题栏融进画布（shadcn app-shell 口径），分隔只靠 border */
   flex: 0 0 auto;
   -webkit-app-region: drag;               /* 整栏拖窗；交互元素逐个豁免 */
   /* 主题切换颜色过渡（颜色族 only，勿动布局属性） */
@@ -38,23 +58,23 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .fb-header .sp { flex: 1 }
 .fb-brand { display: flex; align-items: center; gap: 10px; min-width: 0 }
 .fb-brand .mark {
-  width: 24px; height: 24px;
+  width: 22px; height: 22px;
   border-radius: var(--radius-sm);
-  background: var(--bg-surface-2);
+  background: var(--accent-soft);
   flex: 0 0 auto;
   display: flex; align-items: center; justify-content: center;
 }
-.fb-brand .mark svg { width: 13px; height: 13px; color: var(--text-secondary) }
-.fb-brand .tt { font-size: var(--font-md); font-weight: 600; line-height: 1.2; color: var(--text-primary); white-space: nowrap }
+.fb-brand .mark svg { width: 13px; height: 13px; color: var(--accent-hover) }
+.fb-brand .tt { font-size: 13px; font-weight: 600; line-height: 1.2; color: var(--text-primary); white-space: nowrap }
 .fb-offline-hint { font-size: var(--font-xs); color: var(--danger-soft); white-space: nowrap }
 
-/* 窗口控制（36×30 点击目标；close 危险色对齐挂件 .ic.close） */
-.fb-winctl { display: flex; gap: 2px; -webkit-app-region: no-drag }
-.fb-header .wc-theme { -webkit-app-region: no-drag; margin-right: 4px }   /* 主题切换：drag 区豁免 */
+/* 窗口控制（原型 iconbtn 规格 28×28；close 危险色对齐挂件 .ic.close） */
+.fb-winctl { display: flex; gap: 2px; margin-left: 4px; -webkit-app-region: no-drag }
+.fb-header .wc-theme { -webkit-app-region: no-drag; }   /* 主题切换：drag 区豁免 */
 .wc-btn {
-  width: 36px; height: 30px;
+  width: 28px; height: 28px;
   border: none; background: transparent;
-  border-radius: var(--radius-sm);
+  border-radius: 4px;
   color: var(--text-weak);
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
@@ -67,11 +87,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* ============ 布局 ============ */
 .fb-board {
   display: flex;
-  gap: 14px;              /* 列间松：与列内 gap 8 形成分组对比 */
+  gap: 10px;              /* 列间（原型口径） */
   min-height: 0;
   flex: 1;
   overflow-x: auto;
-  padding: 12px 14px 14px;
+  padding: 12px 14px 8px;
 }
 .fb-offline {
   flex: 1;
@@ -83,43 +103,53 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding: 32px;
 }
 
-/* ============ 看板列 ============
-   三级表面层级：画布 gray-0 → 列 gray-1 → 卡 gray-2。列自带表面+描边
-   获得容器感（此前列透明趴在画布上，七列融成一片）；卡上浮一档成组。
-   间距节奏：列内紧（gap 8）vs 列间松（板 gap 14）——分组靠对比不靠同值。 */
+/* ============ 看板列（原型口径：无列容器，卡直浮画布） ============
+   两级表面：画布 gray-0 → 卡 gray-1（shadow+border 撑起浮起感）。
+   列本身透明无底无框，只承担纵向流布局；拖放高亮时才浮出容器感。 */
 .fb-col {
-  flex: 1 1 0;
-  min-width: 230px;
+  flex: 0 0 272px;        /* 固定列宽（原型）：不随窗口均分，7 列横向滚动 */
   display: flex;
   flex-direction: column;
   gap: 8px;
   min-height: 0;
-  padding: 8px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
+  padding: 0;
+  background: transparent;
   /* 常驻透明 outline：拖拽高亮切换只变颜色（outline-width 属布局，不动画） */
   outline: 1px dashed transparent;
   outline-offset: -4px;
+  border-radius: var(--radius-lg);
   transition: background var(--duration-fast) var(--ease-out),
               outline-color var(--duration-fast) var(--ease-out);
 }
 .fb-col.is-drop-target {
-  background: var(--bg-surface-2);
+  background: var(--bg-surface);
   outline-color: var(--border-strong);
 }
 .col-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 2px 4px 0;
+  gap: 7px;
+  padding: 2px 4px 8px;
   flex: 0 0 auto;
 }
+/* 状态色点（原型七色） */
+.col-dot {
+  width: 8px; height: 8px;
+  border-radius: 99px;
+  flex: 0 0 auto;
+}
+.col-dot.st-backlog { background: var(--gray-5) }
+.col-dot.st-todo { background: #9ca3af }
+.col-dot.st-in_progress { background: var(--brand-500) }
+.col-dot.st-in_review { background: #c084fc }
+.col-dot.st-done { background: var(--success) }
+.col-dot.st-blocked { background: var(--danger) }
+.col-dot.st-canceled { background: var(--gray-6) }
 .col-title {
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
   font-weight: 600;
-  color: var(--text-weak);
-  letter-spacing: .3px;
+  color: var(--text-secondary);
+  letter-spacing: .2px;
 }
 .col-count {
   font-size: var(--font-xs);
@@ -129,6 +159,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-radius: 99px;
   padding: 1px 7px;
   min-width: 16px;
+  height: 17px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   text-align: center;
 }
 .col-list {
@@ -136,30 +170,29 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  padding: 2px 0 8px;
+  gap: 7px;
+  padding: 1px 2px 8px;
   min-height: 0;
 }
 .col-empty {
-  font-size: var(--font-xs);
+  font-size: 11.5px;
   color: var(--text-weak);
-  opacity: .6;
-  text-align: center;
-  padding: 14px 0;
-  border: 1px dashed var(--border-strong);
-  border-radius: var(--radius-md);
+  padding: 10px 4px;
 }
+/* 描述与评论正文可选中复制（其余 UI 保持 user-select:none） */
+.d-desc, .d-c .b { user-select: text; }
 
-/* ============ 任务卡（gray-2 上浮于列 gray-1——三级表面层级的顶层） ============ */
+/* ============ 任务卡（两级表面的顶层：gray-1 卡直浮 gray-0 画布） ============ */
 .fb-card {
   flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 9px 10px;
+  padding: 10px 11px 9px;
   border-radius: var(--radius-md);
-  background: var(--bg-surface-2);
+  background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
+  box-shadow: var(--fb-shadow-sm);   /* shadcn Card：阴影撑起浮起感 */
   cursor: pointer;
   transition:
     background var(--duration-fast) var(--ease-out),
@@ -168,8 +201,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
     box-shadow var(--duration-fast) var(--ease-out);
 }
 .fb-card:hover {
-  background: var(--bg-surface-3);   /* 卡基色升为 gray-2 后 hover 同步上调一档 */
+  background: var(--bg-surface-2);
   border-color: var(--border-hover);
+  box-shadow: var(--fb-shadow-md);
 }
 /* 按压反馈（对齐挂件端按钮 :active scale(.97)；卡片面积大取温和侧 .98，
    transform 过渡复用上方 .fb-card transition 既有声明） */
@@ -221,13 +255,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .card-title {
   font-size: var(--font-sm);
-  line-height: 1.35;
+  line-height: 1.4;
   color: var(--text-primary);
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   overflow-wrap: anywhere;
+  margin-bottom: 8px;
 }
 .fb-card.status-done .card-title,
 .fb-card.status-canceled .card-title {
@@ -263,12 +298,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .pri-chip.pri-high { color: var(--accent-hover); background: var(--accent-soft); }
 .pri-chip.pri-medium, .pri-chip.pri-low { color: var(--text-secondary); background: var(--bg-surface-2); }
 .due-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
   margin-left: auto;
   font-size: var(--font-xs);
   color: var(--text-weak);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.due-chip svg { width: 10px; height: 10px; flex: 0 0 auto; }
 .due-chip.overdue { color: var(--danger-soft); font-weight: 600; }
 
 /* agent 徽标（与 mini 同口径） */
@@ -289,6 +328,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* 响应式策略：窗口 <1280px 抽屉浮层化（overlay，带阴影覆盖在主内容上），
    ≥1280px 恢复并排固定 400px。锚点是 .fb-main（position:relative）。 */
 .fb-main { position: relative; }
+/* <1280px 详情浮层化时的画布遮罩（原型 overlay 口径；纯视觉，关闭走 Esc/×） */
+@media (max-width: 1279px) {
+  .fb-main:has(.fb-detail)::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 9;                /* 低于 .fb-detail 的 z-10 */
+    background: rgba(0, 0, 0, .5);
+    pointer-events: none;
+  }
+}
 .fb-detail {
   position: absolute;                     /* <1280px：overlay 浮层 */
   top: 0; right: 0; bottom: 0;
@@ -308,7 +358,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 @media (min-width: 1280px) {
   .fb-detail {
     position: static;
-    flex: 0 0 400px;
+    flex: 0 0 410px;
     width: auto;
     box-shadow: none;
   }
@@ -324,11 +374,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   to { opacity: 1; transform: scale(1); }
 }
 /* 归档面板展开：右侧 8px 淡入滑入（与 fb-panel-in 同构，150ms） */
-@keyframes fb-slide-in {
-  from { opacity: 0; transform: translateX(8px); }
-  to { opacity: 1; transform: none; }
-}
-/* 抽屉退出（fb-panel-in 的镜像反向；120ms 低于入场 180ms——退出要快）。
+/* fb-slide-in 已随归档常驻侧栏移除（归档现为顶栏入口 + Sheet） *//* 抽屉退出（fb-panel-in 的镜像反向；120ms 低于入场 180ms——退出要快）。
    时长与 App.tsx closeDetail 的 setTimeout 锚定，改动须同步两处。 */
 .fb-detail.closing {
   animation: fb-panel-out 120ms var(--ease-out) forwards;
@@ -337,14 +383,28 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   from { opacity: 1; transform: none; }
   to { opacity: 0; transform: translateX(8px); }
 }
+/* 头部（原型口径：ref 居左、操作居右、最右 × 关闭） */
 .d-hd {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 12px 12px 11px 8px;
+  gap: 6px;
+  padding: 10px 12px;
   border-bottom: 1px solid var(--border-subtle);
   -webkit-app-region: drag;
 }
+.d-hd .sp { flex: 1 }
+.d-close {
+  width: 28px; height: 28px;
+  border: none; background: transparent;
+  border-radius: 6px;
+  color: var(--text-weak);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  -webkit-app-region: no-drag;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.d-close svg { width: 13px; height: 13px }
+.d-close:hover { background: var(--bg-surface-2); color: var(--text-primary); }
 .d-back {
   width: 26px; height: 26px;
   border: none; background: transparent;
@@ -361,40 +421,161 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--text-weak);
   font-variant-numeric: tabular-nums;
 }
-.d-hd .d-status, .d-hd .d-pri {
-  margin-left: auto;
-  font-size: var(--font-xs);
-  padding: 3px 6px;
+/* 状态 Select（shadcn 口径）：trigger 按钮带色点 + chevron，card 底 + shadow-sm */
+.d-status-wrap { position: relative; -webkit-app-region: no-drag }
+.d-status-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px 0 10px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
-  background: var(--bg-surface-2);
-  color: var(--text-secondary);
-  -webkit-app-region: no-drag;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  box-shadow: var(--fb-shadow-sm);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out),
+              background-color var(--duration-fast) var(--ease-out);
 }
-.d-hd .d-date {
-  font-size: var(--font-xs);
-  padding: 3px 6px;
-  border-radius: var(--radius-sm);
+.d-status-trigger .col-dot { width: 7px; height: 7px; flex: 0 0 auto; }
+.d-status-trigger svg { width: 12px; height: 12px; color: var(--text-weak); flex: 0 0 auto; }
+.d-status-trigger:hover { border-color: var(--border-hover); background: var(--bg-surface-2); }
+.d-status-trigger.on { border-color: var(--fb-primary); }
+
+/* 状态 Popover 菜单（与 d-more-menu 同源 Popover 皮肤；原型 status-pop 口径） */
+.d-status-pop {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 5px);
+  z-index: 50;
+  min-width: 150px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 6px;
+  box-shadow: var(--fb-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  transform-origin: top right;
+  animation: fb-menu-in 150ms var(--ease-out);
+}
+.d-status-pop .pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.d-status-pop .pop-item:hover { background: var(--bg-surface-2); color: var(--text-primary); }
+.d-status-pop .pop-item.on { color: var(--text-primary); font-weight: 500; }
+.d-status-pop .pop-item .col-dot { width: 7px; height: 7px; flex: 0 0 auto; }
+.d-status-pop .pop-item .check { margin-left: auto; color: var(--accent-hover); opacity: 0; display: inline-flex; }
+.d-status-pop .pop-item .check svg { width: 12px; height: 12px; }
+.d-status-pop .pop-item.on .check { opacity: 1; }
+/* 受阻/已取消 与主流程间加分隔线（原型 pop-sep 分组） */
+.d-status-pop .pop-item.d-status-sep { margin-top: 5px; position: relative; }
+.d-status-pop .pop-item.d-status-sep::before {
+  content: "";
+  position: absolute;
+  top: -3px; left: 2px; right: 2px;
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+/* 更多操作（⋯）：iconbtn 规格；下拉为 Popover 皮肤 */
+.d-more-wrap { position: relative; -webkit-app-region: no-drag }
+.d-more {
+  width: 28px; height: 28px;
+  border: none; background: transparent;
+  border-radius: 6px;
+  color: var(--text-weak);
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.d-more svg { width: 14px; height: 14px }
+.d-more:hover, .d-more.on { background: var(--bg-surface-2); color: var(--text-primary); }
+.d-more-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 5px);
+  z-index: 50;
+  min-width: 170px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  padding: 6px;
+  box-shadow: var(--fb-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  transform-origin: top right;
+  animation: fb-menu-in 150ms var(--ease-out);
+}
+.d-more-menu .pop-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  border-radius: 5px;
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  text-align: left;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
+}
+.d-more-menu .pop-item:hover { background: var(--bg-surface-2); color: var(--text-primary); }
+.d-more-menu .pop-item.on { color: var(--text-primary); font-weight: 500; }
+.d-more-menu .pop-item .check { margin-left: auto; color: var(--accent-hover); opacity: 0; }
+.d-more-menu .pop-item.on .check { opacity: 1; }
+.d-more-date {
+  height: 28px;
+  padding: 0 8px;
+  border-radius: 5px;
   border: 1px solid var(--border-strong);
-  background: var(--bg-surface-2);
-  color: var(--text-secondary);
-  -webkit-app-region: no-drag;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  outline: none;
 }
+.d-more-date:focus { border-color: var(--fb-primary); box-shadow: 0 0 0 3px var(--fb-ring); }
+/* 原型 detail-body 口径：无 flex gap，块间距全靠各自 margin
+   （title mb10 / meta pb12 / tabs mb12 / dsec 18px 上距） */
 .d-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 14px;
+  padding: 14px 16px 16px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
 }
 .d-title {
   font-size: var(--font-lg);
   font-weight: 600;
-  line-height: 1.35;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
   color: var(--text-primary);
   overflow-wrap: anywhere;
   cursor: text;
+  margin-bottom: 10px;
 }
 .d-title-input {
   font-size: var(--font-lg);
@@ -410,13 +591,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .d-meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px 10px;
-  font-size: var(--font-xs);
+  align-items: center;
+  gap: 4px 12px;
+  font-size: 11.5px;          /* 原型 meta 行字号（介于 xs/sm 之间） */
   color: var(--text-weak);
   font-variant-numeric: tabular-nums;
+  padding-bottom: 12px;
 }
+.d-meta-item { display: inline-flex; align-items: center; gap: 5px; min-width: 0 }
+.d-meta-item svg { width: 12px; height: 12px; color: var(--text-weak); flex: 0 0 auto }
 .d-meta .overdue { color: var(--danger-soft); font-weight: 600; }
-.d-meta .agent { color: var(--accent-hover); }
+.d-meta-creator { margin-left: auto }
+.d-avatar.agent { background: var(--accent-soft); color: var(--accent-hover); border-color: transparent; }
+/* 小节标题（原型 dsec 口径：10.5px 大写弱字 + 上距 18 下距 8） */
 .d-sec {
   display: flex;
   align-items: center;
@@ -425,8 +612,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-weight: 600;
   color: var(--text-weak);
   letter-spacing: .5px;
-  margin-top: 2px;
+  margin: 18px 0 8px;
 }
+/* 首个小节不加双倍上距（tabs mb12 已有分隔） */
+.d-tabs + .d-sec { margin-top: 0; }
 .d-sec-btn {
   font-size: var(--font-xs);
   border: none;
@@ -436,19 +625,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding: 0 2px;
 }
 .d-sec-btn:hover { text-decoration: underline; }
+/* 描述：纯文本排版（原型口径，无卡片底）；空态保留 dashed 提示可点 */
 .d-desc {
   font-size: var(--font-sm);
   color: var(--text-secondary);
-  line-height: 1.6;
-  padding: 10px 11px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-md);
-  background: var(--bg-surface-2);
+  line-height: 1.65;
+  padding: 0;
 }
 .d-desc-empty {
   color: var(--text-weak);
   cursor: pointer;
-  border-style: dashed;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-md);
+  padding: 10px 11px;
 }
 .d-desc-input {
   font-size: var(--font-sm);
@@ -463,10 +652,14 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   min-height: 120px;
   font-family: inherit;
 }
-.d-comments { display: flex; flex-direction: column; gap: 2px; }
-.d-c { padding: 8px 10px; border-radius: var(--radius-md); }
-.d-c:hover { background: var(--bg-surface-2); }
-.d-c .h { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+/* 评论列表（原型口径：条目间 14 松距、无 hover 底——气泡靠 avatar 分组） */
+.d-comments { display: flex; flex-direction: column; gap: 14px; }
+.d-c {
+  display: flex;
+  gap: 9px;
+}
+.d-c .bub { flex: 1; min-width: 0; }
+.d-c .h { display: flex; align-items: baseline; gap: 7px; margin-bottom: 3px; }
 .d-c .a { font-size: var(--font-xs); font-weight: 600; color: var(--text-secondary); }
 .d-c.agent .a { color: var(--accent-hover); }
 .d-c .tm { font-size: var(--font-xs); color: var(--text-weak); font-variant-numeric: tabular-nums; }
@@ -485,25 +678,150 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .d-act .who { color: var(--text-secondary); font-weight: 600; white-space: nowrap; }
 .d-act .what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .d-act .when { white-space: nowrap; font-variant-numeric: tabular-nums; }
+/* ---- 详情 Tabs（下划线式，深潜阅读区用线性导航；sticky 顶部不随内容滚走） ---- */
+.d-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid var(--border-subtle);
+  margin: 4px 0 12px;
+  position: sticky;
+  top: -14px;                       /* 抵消 .d-scroll 的 14px padding，滚到顶时贴边 */
+  background: var(--bg-surface);
+  z-index: 5;
+  padding-top: 14px;
+  margin-top: -14px;
+}
+.d-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 10px;
+  font-size: var(--font-md);
+  color: var(--text-weak);
+  border: none;
+  background: transparent;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: color var(--duration-fast) var(--ease-out),
+              border-color var(--duration-fast) var(--ease-out);
+}
+.d-tab svg { width: 12px; height: 12px; }
+.d-tab:hover { color: var(--text-primary); }
+.d-tab.on { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--fb-primary); }
+.d-tab .n {
+  font-size: var(--font-xs);
+  color: var(--text-weak);
+  background: var(--bg-surface-2);
+  border-radius: 99px;
+  padding: 0 6px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 评论 avatar（首字母圆标，作者身份一眼可辨） ---- */
+.d-avatar {
+  width: 20px; height: 20px;
+  border-radius: 99px;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
+}
+.d-c.agent .d-avatar { background: var(--accent-soft); color: var(--accent-hover); border-color: transparent; }
+.d-composer .d-avatar { width: 28px; height: 28px; font-size: 11px; margin-bottom: 2px; }
+
+/* ---- 活动时间线（竖线串联 + 图标节点；diff 行展示旧值→新值） ---- */
+.d-acts { display: flex; flex-direction: column; }
+.d-act {
+  display: flex;
+  gap: 9px;
+  position: relative;
+  padding-bottom: 12px;
+  border-radius: 0;
+}
+.d-act::before {                    /* 时间线竖线：贯穿后续节点 */
+  content: "";
+  position: absolute;
+  left: 9.5px;
+  top: 22px;
+  bottom: 2px;
+  width: 1px;
+  background: var(--border-subtle);
+}
+.d-act:last-child::before { display: none; }
+.d-act .dot {
+  width: 20px; height: 20px;
+  border-radius: 99px;
+  flex: 0 0 auto;
+  z-index: 1;
+  background: var(--bg-surface-2);
+  border: 1px solid var(--border-subtle);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-weak);
+}
+.d-act .dot svg { width: 10px; height: 10px; }
+.d-act .what { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.d-act .who { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
+.d-act .when { white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--text-weak); }
+.d-act .diff {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-wrap: wrap;
+  margin-top: 3px;
+  font-size: var(--font-xs);
+}
+.d-act .diff .from { color: var(--danger-soft); text-decoration: line-through; }
+.d-act .diff .to { color: var(--success); }
+.d-act .diff svg { width: 10px; height: 10px; color: var(--text-weak); flex: 0 0 auto; }
+.d-act:hover { background: transparent; }
+
+/* 评论输入（原型 composer 口径：一体化带边框容器包 avatar+input，focus-within ring） */
 .d-composer {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 10px 12px 12px;
+  padding: 10px 12px;
   border-top: 1px solid var(--border-subtle);
 }
-.d-composer input {
+.d-composer-box {
   flex: 1;
   min-width: 0;
-  padding: 8px 10px;
-  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 32px;
   border: 1px solid var(--border-strong);
-  background: var(--bg-surface-2);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  padding: 0 4px 0 10px;
+  box-shadow: var(--fb-shadow-sm);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
+}
+.d-composer-box:focus-within { border-color: var(--fb-primary); box-shadow: 0 0 0 3px var(--fb-ring); }
+.d-composer-box input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
   color: var(--text-primary);
   font-size: var(--font-sm);
   font-family: inherit;
 }
-.d-composer input:focus { outline: none; border-color: var(--border-hover); }
+.d-composer-box input::placeholder { color: var(--text-weak); }
 .d-composer button {
   flex: 0 0 auto;
   padding: 8px 14px;
@@ -519,9 +837,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .d-composer button:active { transform: scale(.97); }
 .d-composer button:hover { background: var(--bg-surface-3); border-color: var(--border-hover); }
-.d-composer button.primary { background: var(--accent); border-color: transparent; color: var(--text-inverse); }
-.d-composer button.primary:hover { background: var(--accent-hover); }
+/* shadcn primary：暗色蓝紫上取深字（对比 >7:1）；亮色 primary 取 brand-600 白字 */
+.d-composer button.primary { background: var(--fb-primary); border-color: transparent; color: var(--fb-primary-foreground); }
+.d-composer button.primary:hover { background: var(--accent-hover); color: var(--fb-primary-foreground); }
 .d-composer button:disabled { opacity: .55; cursor: default; }
+/* 发送：icon 按钮（原型口径，primary 32×32） */
+.d-composer button.d-send {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.d-composer button.d-send svg { width: 13px; height: 13px }
 
 /* ============ Markdown ============ */
 .fb-md { overflow-wrap: anywhere; }
@@ -559,45 +889,114 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .fb-filterbar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 16px;
+  gap: 8px;
+  padding: 8px 14px;
   border-bottom: 1px solid var(--border-subtle);
   flex-wrap: wrap;
   /* 主题切换颜色过渡（颜色族 only） */
   transition: background-color var(--duration-base) var(--ease-out),
               border-color var(--duration-base) var(--ease-out);
 }
+/* shadcn Input 口径：透明底 + border + shadow-sm + focus 时 primary 边 + ring 光晕。
+   原型结构：左放大镜 icon + 右 / 快捷键 kbd */
+.fb-searchwrap { position: relative; display: flex; align-items: center; width: 280px; flex: 0 0 auto }
+.fb-searchwrap > svg {
+  position: absolute;
+  left: 9px;
+  width: 13px; height: 13px;
+  color: var(--text-weak);
+  pointer-events: none;
+}
 .fb-search {
-  width: 200px;
-  padding: 5px 9px;
+  width: 100%;
+  height: 30px;
+  padding: 0 30px 0 30px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
-  background: var(--bg-surface-2);
+  background: transparent;
   color: var(--text-primary);
   font-size: var(--font-sm);
   font-family: inherit;
-  transition: border-color var(--duration-fast) var(--ease-out);
+  box-shadow: var(--fb-shadow-sm);
+  transition: border-color var(--duration-fast) var(--ease-out),
+              box-shadow var(--duration-fast) var(--ease-out);
 }
-.fb-search:focus { outline: none; border-color: var(--border-hover); }
-.fb-chips { display: flex; gap: 4px; flex-wrap: wrap; }
-.fb-chip {
-  font-size: var(--font-xs);
-  padding: 3px 9px;
-  border-radius: 99px;
+.fb-searchwrap kbd {
+  position: absolute;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
   border: 1px solid var(--border-subtle);
-  background: transparent;
+  border-radius: 4px;
+  background: var(--bg-surface-2);
   color: var(--text-weak);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: var(--font-xs);
+  pointer-events: none;
+}
+.fb-search::placeholder { color: var(--text-weak); }
+.fb-search:hover { border-color: var(--border-hover); }
+.fb-search:focus {
+  outline: none;
+  border-color: var(--fb-primary);
+  box-shadow: 0 0 0 3px var(--fb-ring);
+}
+.fb-chips { display: flex; gap: 5px; flex-wrap: wrap; }
+/* 筛选栏右统计（原型口径） */
+.fb-sum {
+  margin-left: auto;
+  font-size: var(--font-xs);
+  color: var(--text-weak);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+/* chip（原型 .btn.ghost 口径）：圆角矩形、无边框、500 字重、muted 字色 */
+.fb-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 9px;
+  font-size: var(--font-xs);
+  font-weight: 500;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
   cursor: pointer;
   white-space: nowrap;
-  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
+  font-family: inherit;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
 .fb-chip:hover { background: var(--bg-surface-2); color: var(--text-primary); }
 .fb-chip.on {
   background: var(--accent-soft);
-  border-color: transparent;
   color: var(--accent-hover);
   font-weight: 600;
 }
+/* active chip 前置图标（标签 tag icon 11px；状态胶囊原型无色点） */
+.fb-chip svg { width: 11px; height: 11px; flex: 0 0 auto; }
+/* 已激活胶囊（filterbar 内）：原型 ghost 按钮口径——透明底、无边框、
+   非 accent 蓝底；尾部 × 为细线 svg */
+.fb-filterbar .fb-activechip {
+  height: 30px;
+  padding: 0 10px;
+  font-size: var(--font-sm);
+  background: transparent;
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+.fb-filterbar .fb-activechip:hover { background: var(--bg-surface-2); color: var(--text-primary); }
+.fb-filterbar .fb-activechip .x {
+  font-size: 0;
+  display: inline-flex;
+  align-items: center;
+  opacity: .7;
+}
+.fb-filterbar .fb-activechip .x svg { width: 11px; height: 11px; }
+.fb-filterbar .fb-activechip:hover .x { opacity: 1; }
 .fb-clear {
   font-size: var(--font-xs);
   padding: 3px 9px;
@@ -616,23 +1015,28 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .fb-activechip:hover .x { opacity: 1; }
 /* 触发器：与搜索框同高的描边按钮；漏斗图标 13px 对齐 .ft button svg 规格 */
 .fb-filterwrap { position: relative; display: inline-flex; }
+/* 筛选触发器：shadcn outline button（card 底 + input 边 + shadow-sm） */
 .fb-filterbtn {
   display: inline-flex;
   align-items: center;
   gap: 5px;
   font-size: var(--font-sm);
-  padding: 4px 10px;
+  height: 30px;
+  padding: 0 11px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-strong);
-  background: var(--bg-surface-2);
+  background: var(--bg-surface);
   color: var(--text-secondary);
   cursor: pointer;
   font-family: inherit;
+  box-shadow: var(--fb-shadow-sm);
   transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
 }
 .fb-filterbtn svg { width: 13px; height: 13px; }
-.fb-filterbtn:hover { background: var(--bg-surface-3); border-color: var(--border-hover); color: var(--text-primary); }
-.fb-filterbtn.on { color: var(--accent-hover); border-color: var(--accent-hover); background: var(--accent-soft); }
+.fb-filterbtn svg.chev { width: 12px; height: 12px; }
+.fb-filterbtn:hover { background: var(--bg-surface-2); color: var(--text-primary); }
+.fb-filterbtn.on { color: var(--accent-hover); border-color: var(--accent-hover); }
+/* 激活计数：brand-soft 徽标（实心 accent 在筛选栏太吵） */
 .fb-filtercount {
   font-size: 10px;
   font-weight: 700;
@@ -640,14 +1044,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   height: 15px;
   padding: 0 4px;
   border-radius: 99px;
-  background: var(--accent);
-  color: var(--text-inverse);
+  background: var(--accent-soft);
+  color: var(--accent-hover);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-variant-numeric: tabular-nums;
 }
-/* 下拉面板：菜单语言与 .fb-ctxmenu/.d-label-menu 同源（fb-menu-in 150ms） */
+/* 下拉面板：shadcn Popover 皮肤（popover 底 + border + shadow-lg；菜单语言与
+   .fb-ctxmenu/.d-label-menu 同源，fb-menu-in 150ms） */
 .fb-filtermenu {
   position: absolute;
   top: calc(100% + 6px);
@@ -655,11 +1060,11 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   z-index: 50;
   min-width: 290px;
   max-width: 420px;
-  background: var(--bg-surface-3);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   padding: 10px;
-  box-shadow: var(--shadow-float);
+  box-shadow: var(--fb-shadow-lg);
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -671,22 +1076,31 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-size: var(--font-xs);
   font-weight: 600;
   color: var(--text-weak);
-  letter-spacing: .5px;
+  letter-spacing: .4px;
+  padding: 0 2px;
 }
+/* 组间分隔线（原型 pop-sep 口径） */
+.fb-filtermenu .fb-fgroup + .fb-fgroup { border-top: 1px solid var(--border-subtle); padding-top: 9px; margin-top: 2px; }
 .fb-flabels { max-height: 130px; overflow-y: auto; }  /* 标签全量收纳，超出滚动 */
 
-/* ============ 视图切换 ============ */
+/* ============ 视图切换（shadcn Tabs pill 式：muted 底 + 选中 card 上浮） ============ */
 .fb-viewtoggle {
-  display: flex;
+  display: inline-flex;
+  align-items: center;
   gap: 2px;
+  height: 32px;
   background: var(--bg-surface-2);
-  border-radius: var(--radius-sm);
-  padding: 2px;
+  border-radius: var(--radius-md);
+  padding: 3px;
   -webkit-app-region: no-drag;            /* 标题栏 drag 区内的交互豁免 */
 }
 .fb-viewtoggle button {
-  font-size: var(--font-xs);
-  padding: 3px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  font-size: var(--font-sm);
   border: none;
   border-radius: 5px;
   background: transparent;
@@ -695,10 +1109,13 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   transition: background var(--duration-fast) var(--ease-out),
               color var(--duration-fast) var(--ease-out);
 }
+.fb-viewtoggle button:hover { color: var(--text-primary); }
+.fb-viewtoggle button svg { width: 13px; height: 13px; flex: 0 0 auto; }
 .fb-viewtoggle button.on {
-  background: var(--bg-surface-3);
+  background: var(--bg-surface);          /* 选中片从 muted 底升为 card，shadow 撑出浮起感 */
   color: var(--text-primary);
   font-weight: 600;
+  box-shadow: var(--fb-shadow-sm);
 }
 
 /* ============ 列表视图 ============ */
@@ -727,10 +1144,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   display: grid;
   grid-template-columns: 90px 1fr 80px 60px 90px 100px;
   gap: 8px;
-  padding: 7px 10px;
+  padding: 9px 10px;
   font-size: var(--font-sm);
   color: var(--text-primary);
-  border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--border-subtle);   /* 原型表格分隔线式 */
   cursor: pointer;
   align-items: center;
   transition: background var(--duration-fast) var(--ease-out);
@@ -738,7 +1155,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .fb-list-row:hover { background: var(--bg-surface-2); }
 .fb-list-row .c-id { color: var(--text-weak); font-variant-numeric: tabular-nums; font-size: var(--font-xs); }
 .fb-list-row .c-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.fb-list-row .c-status, .fb-list-row .c-pri { color: var(--text-secondary); font-size: var(--font-xs); }
+.fb-list-row .c-status { display: inline-flex; align-items: center; gap: 6px; color: var(--text-secondary); font-size: var(--font-sm); }
+.fb-list-row .c-status .col-dot { width: 7px; height: 7px; }
+.fb-list-row .c-pri { font-size: var(--font-sm); }
 .fb-list-row .c-due { color: var(--text-weak); font-size: var(--font-xs); font-variant-numeric: tabular-nums; }
 .fb-list-row .c-due.overdue { color: var(--danger-soft); font-weight: 600; }
 .fb-list-row .c-creator { color: var(--text-weak); font-size: var(--font-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -749,84 +1168,216 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-size: var(--font-sm);
 }
 
-/* ============ 归档侧栏 ============ */
-.fb-other {
-  flex: 0 0 auto;
-  border-left: 1px solid var(--border-subtle);
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-}
-.fb-other-toggle {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding: 8px 14px;
-  border: none;
-  background: transparent;
-  color: var(--text-weak);
-  font-size: var(--font-xs);
-  cursor: pointer;
-  white-space: nowrap;
-}
-.fb-other-toggle svg { width: 12px; height: 12px; }
-.fb-other-toggle:hover { color: var(--text-primary); }
-.fb-other-list {
-  width: 280px;
-  max-height: 100%;
-  overflow-y: auto;
-  padding: 4px 8px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  animation: fb-slide-in 150ms var(--ease-out);
-}
-.fb-other-item {
-  display: flex;
+/* ============ 顶栏操作按钮（新建/归档）：原型 ghost 按钮口径 ============ */
+.fb-headerbtn {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px;
-  border-radius: var(--radius-sm);
-  font-size: var(--font-xs);
+  height: 28px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  -webkit-app-region: no-drag;
+  transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out);
 }
-.fb-other-item:hover { background: var(--bg-surface-2); }
-.fb-other-item .id { color: var(--text-weak); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
-.fb-other-item .title {
+.fb-headerbtn svg { width: 13px; height: 13px; flex: 0 0 auto; }
+.fb-headerbtn:hover { background: var(--bg-surface-2); color: var(--text-primary); }
+.fb-headerbtn.on { background: var(--accent-soft); color: var(--accent-hover); }
+.fb-headerbtn kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 4px;
+  margin-left: 2px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-surface-2);
+  color: var(--text-weak);
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 10px;
+  pointer-events: none;
+}
+.fb-archivebtn { position: relative; }
+.fb-archivecount {
+  font-size: 10px;
+  font-weight: 700;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  border-radius: 99px;
+  background: var(--accent-soft);
+  color: var(--accent-hover);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 新建 Popover（Popover 皮肤；锚在标题栏按钮下方） ---- */
+.fb-newwrap { position: relative; -webkit-app-region: no-drag }
+.fb-newtask {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 60;
+  width: 300px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: 10px;
+  box-shadow: var(--fb-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  transform-origin: top right;
+  animation: fb-menu-in 150ms var(--ease-out);
+}
+.fb-newtask-title {
+  height: 32px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--font-sm);
+  font-family: inherit;
+  box-shadow: var(--fb-shadow-sm);
+  outline: none;
+  transition: border-color var(--duration-fast) var(--ease-out), box-shadow var(--duration-fast) var(--ease-out);
+}
+.fb-newtask-title::placeholder { color: var(--text-weak); }
+.fb-newtask-title:focus { border-color: var(--fb-primary); box-shadow: 0 0 0 3px var(--fb-ring); }
+.fb-newtask-row { display: flex; gap: 6px; }
+.fb-newtask-row select, .fb-newtask-row input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: var(--font-xs);
+  font-family: inherit;
+  outline: none;
+}
+.fb-newtask-row select:focus, .fb-newtask-row input:focus { border-color: var(--fb-primary); }
+.fb-newtask-err { font-size: var(--font-xs); color: var(--danger-soft); padding: 0 2px; }
+.fb-newtask-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-top: 2px;
+}
+.fb-newtask-foot .hint { font-size: var(--font-xs); color: var(--text-weak); }
+.fb-newtask-submit {
+  height: 28px;
+  padding: 0 12px;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: var(--fb-primary);
+  color: var(--fb-primary-foreground);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  font-family: inherit;
+  box-shadow: var(--fb-shadow-sm);
+  transition: filter var(--duration-fast) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+.fb-newtask-submit:hover { filter: brightness(1.08); }
+.fb-newtask-submit:active { transform: scale(.98); }
+.fb-newtask-submit:disabled { opacity: .55; cursor: default; }
+
+/* ---- 归档 Sheet（右侧弹窗，与详情 fb-detail 同一语言/同一响应式） ---- */
+.fb-archive {
+  position: absolute;
+  top: 0; right: 0; bottom: 0;
+  z-index: 20;
+  width: min(410px, 100%);
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+  min-height: 0;
+  box-shadow: var(--fb-shadow-lg), -16px 0 40px rgba(0, 0, 0, .3);
+  animation: fb-panel-in var(--duration-base) var(--ease-out);
+}
+@media (min-width: 1280px) {
+  .fb-archive { box-shadow: -16px 0 40px rgba(0, 0, 0, .3); }
+}
+.fb-archive-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.fb-archive-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: var(--font-sm);
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+.fb-archive-item:hover { border-color: var(--border-hover); background: var(--bg-surface-2); }
+.fb-archive-item .id { color: var(--text-weak); font-variant-numeric: tabular-nums; flex: 0 0 auto; font-size: var(--font-xs); }
+.fb-archive-item .title {
   flex: 1; min-width: 0;
   color: var(--text-primary);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.fb-other-item .status { color: var(--text-weak); flex: 0 0 auto; }
-.fb-other-item button {
+.fb-archive-item .status {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-weak);
   flex: 0 0 auto;
   font-size: var(--font-xs);
-  padding: 2px 8px;
+}
+.fb-archive-item .status .col-dot { width: 7px; height: 7px; }
+.fb-archive-item .act {
+  flex: 0 0 auto;
+  font-size: var(--font-xs);
+  padding: 2px 9px;
   border-radius: var(--radius-xs);
   border: 1px solid var(--border-strong);
-  background: var(--bg-surface-3);
+  background: var(--bg-surface);
   color: var(--text-secondary);
   cursor: pointer;
+  font-family: inherit;
+  transition: color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
 }
-.fb-other-item button:hover { color: var(--text-primary); border-color: var(--border-hover); }
-.fb-other-item button.danger { color: var(--danger-soft); }
-.fb-other-item button.danger:hover { border-color: var(--danger-bg); }
-.fb-other-empty {
-  padding: 16px;
+.fb-archive-item .act:hover { color: var(--text-primary); border-color: var(--border-hover); }
+.fb-archive-item .act.danger { color: var(--danger-soft); }
+.fb-archive-item .act.danger:hover { border-color: var(--danger); }
+.fb-archive-empty {
+  padding: 24px 16px;
   text-align: center;
   color: var(--text-weak);
-  font-size: var(--font-xs);
+  font-size: var(--font-sm);
 }
 
-/* ============ 右键菜单 ============ */
+/* ============ 右键菜单（shadcn DropdownMenu 皮肤） ============ */
 .fb-ctxmenu {
   position: fixed;
   z-index: 50;
   min-width: 140px;
-  background: var(--bg-surface-3);
-  border: 1px solid var(--border-strong);
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   padding: 4px;
-  box-shadow: var(--shadow-float);
+  box-shadow: var(--fb-shadow-lg);
   display: flex;
   flex-direction: column;
   transform-origin: top left;          /* 从指针点（右键位置）向右下展开 */
@@ -845,26 +1396,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .fb-ctxmenu button:hover { background: var(--bg-surface-2); }
 
 /* ============ 详情标签编辑 ============ */
-.d-labels { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
-.d-label-add {
-  font-size: var(--font-xs);
-  padding: 1px 7px;
-  border-radius: var(--radius-xs);
-  border: 1px dashed var(--border-strong);
-  background: transparent;
-  color: var(--text-weak);
-  cursor: pointer;
-}
-.d-label-add:hover { color: var(--accent-hover); border-color: var(--accent-hover); }
+.d-labels { display: flex; gap: 5px; flex-wrap: wrap; align-items: center; }
+.d-label-none { font-size: var(--font-sm); color: var(--text-weak); }
+/* 标签菜单：文档流展开（详情 Tab 内小节），边框内嵌块——不用浮层投影 */
 .d-label-menu {
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 6px;
+  margin-top: 6px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-md);
   background: var(--bg-surface-2);
-  transform-origin: top left;          /* 从「+」按钮方向展开 */
   animation: fb-menu-in 150ms var(--ease-out);
 }
 .d-label-menu > button {
@@ -919,7 +1462,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border: none;
   cursor: pointer;
 }
-.d-rel-add button.primary { background: var(--accent); color: var(--text-inverse); }
+.d-rel-add button.primary { background: var(--fb-primary); color: var(--fb-primary-foreground); }
 .d-rels { display: flex; flex-direction: column; gap: 2px; }
 .d-rel {
   display: flex;
@@ -929,8 +1472,26 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding: 4px 6px;
   border-radius: var(--radius-sm);
 }
-.d-rel:hover { background: var(--bg-surface-2); }
-.d-rel .kind { color: var(--text-weak); flex: 0 0 auto; }
+.d-rel:hover { background: var(--bg-surface-2); border-color: var(--border-hover); }
+.d-rel {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 7px 9px;
+  gap: 8px;
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+/* 关系类型徽标（原型 rel-tag 口径） */
+.d-rel .kind {
+  flex: 0 0 auto;
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .4px;
+  color: var(--accent-hover);
+  background: var(--accent-soft);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.d-rel .target { color: var(--text-primary); font-size: var(--font-sm); }
 .d-rel .target { flex: 1; min-width: 0; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .d-rel button {
   border: none; background: transparent; color: var(--text-weak);
@@ -950,6 +1511,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-radius: var(--radius-sm);
 }
 .d-att:hover { background: var(--bg-surface-2); }
+.d-att .att-ic { width: 13px; height: 13px; color: var(--text-weak); flex: 0 0 auto; }
 .d-att .name { flex: 1; min-width: 0; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .d-att .size { color: var(--text-weak); font-variant-numeric: tabular-nums; flex: 0 0 auto; }
 .d-att button {
@@ -969,19 +1531,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* ============ 响应式（Tauri 窗口宽 = 视口宽） ============ */
 /* 密度降档：窄窗收紧间距与控件，7 列靠横向滚动自然降维 */
 @media (max-width: 1279px) {
-  .fb-board { gap: 8px; padding: 8px; }
-  .fb-col { min-width: 210px; }
+  .fb-board { gap: 8px; padding: 8px 8px 6px; }
+  .fb-col { flex-basis: 240px; }
   .fb-filterbar { padding: 6px 10px; gap: 8px; }
-  .fb-search { width: 160px; }
+  .fb-searchwrap { width: 200px; }
   .fb-list { padding: 6px 10px; }
-  .fb-other-list { width: 220px; }
   .d-hd { -webkit-app-region: no-drag; }   /* 抽屉浮层化后其头不再是窗口边缘 */
 }
 /* 极窄（<1000px）：标题让位，归档面板进一步收窄 */
 @media (max-width: 999px) {
   .fb-brand .tt { display: none; }
-  .fb-other-list { width: 190px; }
-  .fb-search { width: 130px; }
+  .fb-searchwrap { width: 140px; }
 }
 
 /* ============ toast 覆写（全版窗口无底栏，降低底部留白） ============ */
@@ -993,10 +1553,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   @keyframes fb-panel-in-reduced { from { opacity: 0 } to { opacity: 1 } }
   .fb-detail.closing { animation: fb-panel-out-reduced var(--duration-fast) linear forwards; }
   @keyframes fb-panel-out-reduced { from { opacity: 1 } to { opacity: 0 } }
-  .fb-ctxmenu, .d-label-menu, .fb-filtermenu { animation: fb-menu-in-reduced var(--duration-fast) linear; }
+  .fb-ctxmenu, .d-label-menu, .fb-filtermenu, .fb-newtask, .d-more-menu { animation: fb-menu-in-reduced var(--duration-fast) linear; }
   @keyframes fb-menu-in-reduced { from { opacity: 0 } to { opacity: 1 } }
-  .fb-other-list { animation: fb-slide-in-reduced var(--duration-fast) linear; }
-  @keyframes fb-slide-in-reduced { from { opacity: 0 } to { opacity: 1 } }
+  .fb-archive { animation: fb-panel-in-reduced var(--duration-fast) linear; }
   .fb-card.is-moving { animation: none; }        /* 脉冲属闪烁类，完整豁免；outline 静态保留 */
   .fb-col { transition-property: background; }   /* outline-color 过渡一并豁免（保守侧） */
   .fb-card.is-settling { animation: none; }

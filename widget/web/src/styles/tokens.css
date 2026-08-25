@@ -105,6 +105,15 @@
   /* 滚动条（三端统一：细窄、透明轨道、圆角 thumb） */
   --scrollbar-thumb:var(--gray-3);
   --scrollbar-thumb-hover:var(--gray-5);
+
+  /* ---- shadcn 组件规格语义层（fullboard 专用，--fb- 前缀防遮蔽；
+     挂件端 widget.css 不引用。primary 暗色取深字：蓝紫亮度高，深字对比 >7:1） ---- */
+  --fb-primary:var(--brand-500);
+  --fb-primary-foreground:#0b0d16;
+  --fb-ring:rgba(110,139,255,.5);
+  --fb-shadow-sm:0 1px 2px rgba(0,0,0,.35);
+  --fb-shadow-md:0 4px 8px -1px rgba(0,0,0,.4),0 2px 4px -2px rgba(0,0,0,.35);
+  --fb-shadow-lg:0 12px 32px -6px rgba(0,0,0,.5),0 4px 10px -4px rgba(0,0,0,.4);
 }
 
 /* ---- SEMANTIC（亮色主题）----
@@ -159,6 +168,14 @@
 
   /* 阴影（亮色下减淡） */
   --shadow-float:0 10px 30px rgba(23,26,33,.14),0 2px 8px rgba(23,26,33,.10);
+
+  /* shadcn 语义层（亮色：primary 取深侧、hover 更深——方向与暗色相反） */
+  --fb-primary:var(--brand-600);
+  --fb-primary-foreground:#ffffff;
+  --fb-ring:rgba(74,99,214,.4);
+  --fb-shadow-sm:0 1px 2px rgba(23,26,33,.06);
+  --fb-shadow-md:0 4px 8px -1px rgba(23,26,33,.08),0 2px 4px -2px rgba(23,26,33,.06);
+  --fb-shadow-lg:0 12px 32px -6px rgba(23,26,33,.14),0 4px 10px -4px rgba(23,26,33,.08);
 }
 
 /* ==========================================================================

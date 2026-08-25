@@ -17,9 +17,9 @@ export interface RelationsView {
 
 const GROUP_LABEL: Record<string, string> = {
   parent: '父任务',
-  blocks: '阻塞了',
-  blockedBy: '被阻塞于',
-  related: '相关',
+  blocks: '阻塞',
+  blockedBy: '被阻塞',
+  related: '关联',
 };
 
 export default function RelationsEditor({

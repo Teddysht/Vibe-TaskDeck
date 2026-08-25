@@ -15,6 +15,7 @@ export default function FilterBar() {
   const filters = useBoardStore((s) => s.filters);
   const setFilters = useBoardStore((s) => s.setFilters);
   const projects = useBoardStore((s) => s.projects);
+  const tasks = useBoardStore((s) => s.tasks);
   const searchRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -64,6 +65,9 @@ export default function FilterBar() {
   }
 
   const catalog = projects[0]?.labels ?? [];
+  // 右侧统计（原型口径：总数 · 进行中数）
+  const live = tasks.filter((t) => !t.archivedAt);
+  const inProgress = live.filter((t) => t.status === 'in_progress').length;
   // 已激活条件（可删胶囊 + 徽标口径一致：值总数，非组数）
   const activeValues = [
     ...filters.statuses.map((s) => ({ key: 'statuses' as const, v: s, label: STATUS_LABEL[s] })),
@@ -73,15 +77,19 @@ export default function FilterBar() {
 
   return (
     <div className="fb-filterbar" data-testid="filterbar">
-      <input
-        ref={searchRef}
-        id="fb-search"
-        className="fb-search"
-        placeholder="搜索任务…（/ 聚焦）"
-        defaultValue={filters.content}
-        onChange={(e) => apply({ content: e.target.value })}
-      />
-      {/* 已激活条件：单个可删胶囊（点击即移除该值） */}
+      <div className="fb-searchwrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="m20 20-3.5-3.5" /></svg>
+        <input
+          ref={searchRef}
+          id="fb-search"
+          className="fb-search"
+          placeholder="搜索任务…"
+          defaultValue={filters.content}
+          onChange={(e) => apply({ content: e.target.value })}
+        />
+        <kbd aria-hidden="true">/</kbd>
+      </div>
+      {/* 已激活条件：单个可删胶囊（点击即移除该值）；标签胶囊带 tag icon（原型口径：状态胶囊纯文字） */}
       {activeValues.map(({ key, v, label }) => (
         <button
           key={`${key}:${v}`}
@@ -89,8 +97,13 @@ export default function FilterBar() {
           title={`移除筛选：${label}`}
           onClick={() => apply({ [key]: filters[key].filter((x) => x !== v) })}
         >
+          {key === 'labels' && (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V4a1 1 0 0 1 1-1h9l8.6 8.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" /></svg>
+          )}
           {label}
-          <span className="x" aria-hidden>×</span>
+          <span className="x" aria-hidden>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M18 6 6 18M6 6l12 12" /></svg>
+          </span>
         </button>
       ))}
       <div className="fb-filterwrap" ref={menuRef}>
@@ -100,11 +113,12 @@ export default function FilterBar() {
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M22 3H2l8 9.46V19l4 2v-8.54L22 3z" />
           </svg>
           筛选
           {activeValues.length > 0 && <span className="fb-filtercount">{activeValues.length}</span>}
+          <svg className="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6" /></svg>
         </button>
         {open && (
           <div className="fb-filtermenu" data-testid="filtermenu">
@@ -161,6 +175,7 @@ export default function FilterBar() {
           </div>
         )}
       </div>
+      <span className="fb-sum">{live.length} 个任务 · {inProgress} 个进行中</span>
     </div>
   );
 }

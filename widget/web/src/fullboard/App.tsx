@@ -2,7 +2,7 @@
  * 全版看板 App —— 顶栏 + 筛选栏 + 看板/列表视图 + 详情抽屉 + undo
  * 视图与筛选均 URL 同步（?view=list&status=…&content=…）。
  * ============================================================ */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { loadBoardData, markOffline } from './api';
 import { useBoardEvents, useBoardPolling } from './hooks/useBoardEvents';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -11,9 +11,11 @@ import BoardView from './board/BoardView';
 import TaskDetailPanel from './detail/TaskDetailPanel';
 import IssueListView from './list/IssueListView';
 import FilterBar from './filters/FilterBar';
+import NewTaskPopover from './panels/NewTaskPopover';
 import OtherTasksPanel from './panels/OtherTasksPanel';
 import TaskContextMenu, { type MenuState } from './shared/TaskContextMenu';
 import WindowControls from './shared/WindowControls';
+import { tryGetCurrentWindow, useMaximized } from './hooks/useMaximized';
 import Toast from '../components/Toast';
 import ThemeToggle from '../components/ThemeToggle';
 import type { Task } from '../lib/types';
@@ -47,9 +49,46 @@ export default function App() {
   const selectedId = useBoardStore((s) => s.selectedId);
   const select = useBoardStore((s) => s.select);
   const [menu, setMenu] = useState<MenuState | null>(null);
+  // 窗口最大化态：根圆角归零（贴边切不出缺口）——共享 WindowControls 同源
+  const maximized = useMaximized(tryGetCurrentWindow());
   // 抽屉退出两段式：closing 态跑 120ms 反向动画（CSS fb-panel-out），
   // 动画结束才真正卸载（select(null)）。时长与 .fb-detail.closing 锚定。
   const [detailClosing, setDetailClosing] = useState(false);
+  // 标题栏弹窗：新建（Popover）/ 归档（右侧 Sheet，与详情同语言）
+  const [newOpen, setNewOpen] = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
+  const newWrapRef = useRef<HTMLDivElement>(null);
+  // 归档入口计数（含隐藏时的徽标）
+  const tasks = useBoardStore((s) => s.tasks);
+  const archivedCount = tasks.filter((t) => t.archivedAt).length;
+
+  // 新建 Popover 面板外点关闭；N 全局唤起（输入框聚焦时不抢占）
+  useEffect(() => {
+    if (!newOpen) return;
+    const onDown = (e: MouseEvent) => {
+      if (!newWrapRef.current?.contains(e.target as Node)) setNewOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setNewOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [newOpen]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'n' && e.key !== 'N') return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      e.preventDefault();
+      setNewOpen(true);
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, []);
 
   function closeDetail() {
     if (detailClosing) return; // 防重入（closing 期间再点关闭忽略）
@@ -74,7 +113,8 @@ export default function App() {
   }
 
   return (
-    <div className="fb-root flex h-full flex-col">
+    // maximized 插值前必须留空格：Tailwind 静态扫描提不出紧贴 ${ 的候选类（flex-col 曾因此丢失）
+    <div className={`fb-root flex h-full flex-col ${maximized ? 'maximized' : ''}`.trim()}>
       {/* 无框自绘标题栏：drag 区承载窗口拖拽与双击最大化（语言对齐挂件 .hd） */}
       <header
         className="fb-header"
@@ -90,11 +130,35 @@ export default function App() {
           <div className="tt">任务看板</div>
         </div>
         <div className="fb-viewtoggle">
-          <button className={viewMode === 'board' ? 'on' : ''} onClick={() => switchView('board')}>看板</button>
-          <button className={viewMode === 'list' ? 'on' : ''} onClick={() => switchView('list')}>列表</button>
+          <button className={viewMode === 'board' ? 'on' : ''} onClick={() => switchView('board')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><rect x="3" y="3" width="6" height="16" rx="1" /><rect x="11" y="3" width="6" height="10" rx="1" /><rect x="19" y="3" width="2" height="14" rx="1" /></svg>
+            看板
+          </button>
+          <button className={viewMode === 'list' ? 'on' : ''} onClick={() => switchView('list')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
+            列表
+          </button>
         </div>
         {!online && <span className="fb-offline-hint">数据层不可用，正在重试…</span>}
         <div className="sp" />
+        <div className="fb-newwrap" ref={newWrapRef}>
+          <button
+            className={`fb-headerbtn${newOpen ? ' on' : ''}`}
+            onClick={() => setNewOpen((v) => !v)}
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M5 12h14M12 5v14" /></svg>
+            新建
+          </button>
+          <NewTaskPopover open={newOpen} onClose={() => setNewOpen(false)} />
+        </div>
+        <button
+          className={`fb-headerbtn fb-archivebtn${archiveOpen ? ' on' : ''}`}
+          title="归档任务"
+          onClick={() => setArchiveOpen((v) => !v)}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="4" width="20" height="5" rx="1" /><path d="M4 9v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9M10 13h4" /></svg>
+          {archivedCount > 0 && <span className="fb-archivecount">{archivedCount}</span>}
+        </button>
         <ThemeToggle className="wc-btn wc-theme" />
         <WindowControls />
       </header>
@@ -109,7 +173,7 @@ export default function App() {
         {selectedId && (
           <TaskDetailPanel taskId={selectedId} closing={detailClosing} onClose={closeDetail} />
         )}
-        <OtherTasksPanel />
+        <OtherTasksPanel open={archiveOpen} onClose={() => setArchiveOpen(false)} />
       </div>
       {menu && (
         <TaskContextMenu

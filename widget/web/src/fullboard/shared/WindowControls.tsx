@@ -2,24 +2,9 @@
  * 窗口控制（无框标题栏右端）：最小化 / 最大化切换 / 关闭。
  * 语言对齐挂件 .hd .ic（圆角图标按钮、close hover 危险色），
  * 尺寸放大到桌面窗口点击目标（36×32）。退化为浏览器直开时隐藏。
+ * 最大化态改由共享 useMaximized hook 提供（App 根圆角同源）。
  * ============================================================ */
-import { useEffect, useState } from 'react';
-import { getCurrentWindow, type Window } from '@tauri-apps/api/window';
-import { hasTauri } from '../../lib/tauri';
-
-// getCurrentWindow() 依赖 __TAURI_INTERNALS__.metadata.currentWindow.label——
-// e2e mock 层只注入 invoke 不注入 metadata，直接调用会 TypeError 崩树。
-function tryGetCurrentWindow(): Window | null {
-  if (!hasTauri()) return null;
-  try {
-    const meta = (window as unknown as { __TAURI_INTERNALS__?: { metadata?: { currentWindow?: { label?: string } } } })
-      .__TAURI_INTERNALS__?.metadata;
-    if (!meta?.currentWindow?.label) return null;
-    return getCurrentWindow();
-  } catch {
-    return null;
-  }
-}
+import { useMaximized, tryGetCurrentWindow } from '../hooks/useMaximized';
 
 export default function WindowControls() {
   const win = tryGetCurrentWindow();
@@ -28,26 +13,8 @@ export default function WindowControls() {
   return <WindowControlsInner win={win} />;
 }
 
-function WindowControlsInner({ win }: { win: Window }) {
-  const [maximized, setMaximized] = useState(false);
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    // 最大化态跟踪：双击标题栏/还原都会触发系统 resize 事件
-    win.isMaximized().then(setMaximized).catch(() => {});
-    win
-      .onResized(async () => {
-        setMaximized(await win.isMaximized().catch(() => false));
-      })
-      .then((fn) => {
-        if (typeof fn === 'function') unlisten = fn;
-      })
-      .catch(() => {});
-    return () => {
-      // mock 层 listen 可能 resolve 非函数（如 unlisten id），仅函数时调用
-      if (typeof unlisten === 'function') unlisten();
-    };
-  }, [win]);
+function WindowControlsInner({ win }: { win: import('@tauri-apps/api/window').Window }) {
+  const maximized = useMaximized(win);
 
   return (
     <div className="fb-winctl">

@@ -105,6 +105,7 @@ export default function BoardColumn({
       onDrop={handleDrop}
     >
       <header className="col-header">
+        <span className={`col-dot st-${status}`} aria-hidden="true" />
         <h2 className="col-title">{COLUMN_LABEL[status]}</h2>
         <span className="col-count">{tasks.length}</span>
       </header>
