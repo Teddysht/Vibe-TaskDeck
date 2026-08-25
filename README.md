@@ -1,10 +1,10 @@
-# TaskDeck
+# Vibe-TaskDeck
 
-TaskDeck is a compact, reusable skill for turning task lists into a clear, actionable board.
+Vibe-TaskDeck is an AI-native taskboard for turning coding ideas and task lists into a clear, actionable board.
 
 ## Purpose
 
-Use it to capture work, group tasks by status or priority, and keep the next action visible without adding unnecessary process.
+Use it with AI coding assistants—such as Codex, Claude, or Mana—to capture work, group tasks by status or priority, and keep the next action visible without adding unnecessary process.
 
 ## Status
 
