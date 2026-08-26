@@ -1,13 +1,24 @@
+<div align="center">
+
+<img src="docs/assets/icon.png" width="128" alt="Vibe-TaskDeck">
+
 # Vibe-TaskDeck
 
-[![Platform](https://img.shields.io/badge/平台-Windows-blue)](https://github.com/Teddysht/TaskDeck)
-[![Tauri](https://img.shields.io/badge/Tauri-2.0-orange)](https://tauri.app)
-[![React](https://img.shields.io/badge/React-19-61dafb)](https://react.dev)
-[![Rust](https://img.shields.io/badge/Rust-edition%202021-dea584)](https://www.rust-lang.org)
-[![SQLite](https://img.shields.io/badge/数据-SQLite-003b57)](https://www.sqlite.org)
-[![License](https://img.shields.io/badge/License-Apache--2.0-green)](#开源许可)
+**人机共享任务协议 · 常驻桌面的任务小挂件**
 
-**[📘 技术文档](docs/TECHNICAL.md)** · **[🚀 快速开始](#快速开始)** · **[🤖 让 AI 帮你管任务](#让-ai-帮你管任务)** · **[❓ 常见问题](#常见问题)**
+[![Release](https://img.shields.io/github/v/release/Teddysht/Vibe-TaskDeck?style=flat-square&label=发布)](https://github.com/Teddysht/Vibe-TaskDeck/releases/latest)
+[![Platform](https://img.shields.io/badge/平台-Windows-blue?style=flat-square)](https://github.com/Teddysht/Vibe-TaskDeck/releases/latest)
+[![Tauri](https://img.shields.io/badge/Tauri-2.0-orange?style=flat-square)](https://tauri.app)
+[![React](https://img.shields.io/badge/React-19-61dafb?style=flat-square)](https://react.dev)
+[![Rust](https://img.shields.io/badge/Rust-edition%202021-dea584?style=flat-square)](https://www.rust-lang.org)
+[![SQLite](https://img.shields.io/badge/数据-SQLite-003b57?style=flat-square)](https://www.sqlite.org)
+[![License](https://img.shields.io/badge/License-Apache--2.0-green?style=flat-square)](#开源许可)
+
+**[⬇️ 下载安装](https://github.com/Teddysht/Vibe-TaskDeck/releases/latest)** · **[📘 技术文档](docs/TECHNICAL.md)** · **[🚀 快速开始](#快速开始)** · **[🤖 让 AI 帮你管任务](#让-ai-帮你管任务)** · **[❓ 常见问题](#常见问题)**
+
+</div>
+
+---
 
 ---
 
@@ -27,9 +38,13 @@
 | --- | --- | --- |
 | 🟢 **胶囊**（默认） | 280×56 的小条 | 常驻屏幕角落，扫一眼当前任务；多个任务自动轮播 |
 | 📋 **面板** | 360×520 | 点胶囊展开：任务列表、新建任务、一键流转状态、看详情写评论 |
-| 🗂 **全版看板** | 独立大窗口 | 面板顶部点「⛶」图标打开：七列看板拖拽、筛选搜索、标签、附件、归档、撤销 |
+| 🗂 **全版看板** | 独立大窗口 | 面板顶部点「⛶」图标打开：七列看板拖拽、筛选搜索、标签、附件、归档、撤销、设置（⚙ 含检查更新） |
+
+> 💡 **关闭挂件 ≠ 退出**：点 × 只是收进系统托盘（常驻后台），托盘左键随时唤回；托盘右键 →「退出」才是真正退出。新版本发布时 ⚙ 齿轮上会出现小圆点提醒。
 
 ## 快速开始
+
+> 🎁 **普通用户免构建**：直接到 [Releases](https://github.com/Teddysht/Vibe-TaskDeck/releases/latest) 下载 `taskdeck-widget_x64-setup.exe`，双击安装（自带桌面快捷方式与开机自启选项），装完即用——下面 4 步是给需要 AI 命令行或想改代码的人的完整路径。
 
 ### 第 0 步：准备工作（只需一次）
 
@@ -129,7 +144,7 @@ AI 会通过 `taskctl` 命令建任务、认领、推进、评审——每一步
 目前只支持 Windows（挂件依赖 Windows 的 WebView2 与窗口特性）。
 
 **Q：我的任务数据会被上传吗？**
-不会。纯本地，无任何联网上报。
+不会。任务数据纯本地存储（`.data` 目录下单个 SQLite 文件）。唯一的网络请求是启动时访问 GitHub 查询一次新版本（仅读取 Release 标题，不含任何本地数据；失败静默跳过）。
 
 ## 参与开发
 
