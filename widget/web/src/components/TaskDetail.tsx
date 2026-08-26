@@ -5,9 +5,11 @@
  * #dSec #dComments #dCEmpty #dcInput #dcSend；评论输入非受控（e2e 契约）。
  * v0.3.2 M3 就地编辑：#dPri（优先级 chip）→ #dPriMenu（5 项 data-p）；
  * #dDue（截止 chip）→ #dDueInput（原生 date，空值=清除）+ #dDueClear。
+ * M4 标签：#dLabels（chips 行）→ #dLabelMenu（库勾选 + 新建）+
+ * #dLabelInput（新标签，Enter 入库并勾选）；菜单文档流展开不裁切。
  * ============================================================ */
 import { useEffect, useRef, useState } from 'react';
-import { addComment, moveTask, refreshDetail, updateTask } from '../lib/api';
+import { addComment, addLabel, loadData, moveTask, refreshDetail, updateTask } from '../lib/api';
 import { boardActions } from '../lib/actions';
 import { errMsg, showToast } from '../lib/toast';
 import { isOverdue, priLabel, shortDate, shortTime } from '../lib/format';
@@ -26,6 +28,7 @@ const PRI_OPTIONS: { v: string; label: string }[] = [
 export default function TaskDetail() {
   const detail = useAppStore((s) => s.detail);
   const detailId = useAppStore((s) => s.detailId);
+  const projects = useAppStore((s) => s.projects);
   const closeDetail = useAppStore((s) => s.closeDetail);
   const inputRef = useRef<HTMLInputElement>(null);
   const sendRef = useRef<HTMLButtonElement>(null);
@@ -37,6 +40,9 @@ export default function TaskDetail() {
   // M3：优先级菜单 / 截止日编辑态（互斥展开，meta 行内就地切换）
   const [priMenu, setPriMenu] = useState(false);
   const [dueEdit, setDueEdit] = useState(false);
+  // M4：标签编辑菜单 / 新标签输入（文档流展开，与浮层菜单互不干扰）
+  const [labelMenu, setLabelMenu] = useState(false);
+  const [newLabel, setNewLabel] = useState('');
 
   // 点菜单外任意处收起优先级菜单（chip 自身点击走 toggle，不经过这里关闭）
   useEffect(() => {
@@ -55,6 +61,8 @@ export default function TaskDetail() {
     // 切换目标任务时收起就地编辑（组件常驻不卸载，state 需手动复位）
     setPriMenu(false);
     setDueEdit(false);
+    setLabelMenu(false);
+    setNewLabel('');
     if (detailId) refreshDetail().catch((e) => console.error('open detail failed', e));
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 普通路径挂载时 detailId 已是新值，语义一致
   }, [detailId]);
@@ -68,6 +76,9 @@ export default function TaskDetail() {
   const t = detail.task;
   const comments = detail.comments || [];
   const acts = boardActions(t);
+  // M4 标签：任务标签 + 项目标签库（catalog；按 projectId 匹配，缺省回落首个项目）
+  const catalog = projects.find((p) => p.id === t.projectId)?.labels ?? projects[0]?.labels ?? [];
+  const taskLabels = t.labels ?? [];
 
   // 元信息行：优先级（可编辑）/ 截止（可编辑）/ 创建者 / 会话归属 / 创建时间
   const meta: React.ReactNode[] = [];
@@ -228,6 +239,30 @@ export default function TaskDetail() {
     }
   }
 
+  // M4 标签勾选/取消：labels 全量写回（读 getState 最新值而非渲染闭包，
+  // 连续点两个标签不因闭包旧值互相覆盖）
+  async function toggleLabel(label: string) {
+    const cur = useAppStore.getState().detail?.task?.labels ?? [];
+    const next = cur.includes(label) ? cur.filter((l) => l !== label) : [...cur, label];
+    await saveField({ labels: next });
+  }
+
+  // M4 新标签：先入项目标签库（add_label），刷新 catalog 后自动勾选到任务
+  async function createLabel() {
+    const label = newLabel.trim();
+    const task = useAppStore.getState().detail?.task;
+    if (!label || !task) return;
+    try {
+      await addLabel(task.projectId ?? 'local', label);
+      setNewLabel('');
+      await loadData(); // catalog 即时更新（labels-updated 事件为兜底信道）
+      await toggleLabel(label);
+    } catch (err) {
+      console.error('add_label failed', err);
+      showToast(errMsg(err, '新建标签失败'), true);
+    }
+  }
+
   return (
     <div className="detail" id="detail" style={{ display: 'flex' }}>
       <div className="d-hd">
@@ -286,6 +321,42 @@ export default function TaskDetail() {
           ))}
         </div>
         <div className="d-meta" id="dMeta">{meta}</div>
+        {/* M4 标签小节：头行（标题+编辑）→ chips → 文档流菜单（360px 窄窗不裁切，对齐 fullboard 口径） */}
+        <div className="d-sec d-sec-labels">
+          标签 {taskLabels.length > 0 ? taskLabels.length : ''}
+          <button className="d-sec-btn" onClick={() => setLabelMenu((v) => !v)}>
+            {labelMenu ? '收起' : '编辑'}
+          </button>
+        </div>
+        <div className="d-labels" id="dLabels">
+          {taskLabels.map((l) => (
+            <span key={l} className="label-chip" data-label={l}>{l}</span>
+          ))}
+          {taskLabels.length === 0 && !labelMenu && <span className="d-label-none">暂无标签</span>}
+        </div>
+        {labelMenu && (
+          <div className="d-label-menu" id="dLabelMenu">
+            {catalog.length === 0 && <span className="d-label-none">标签库为空，输入新标签创建</span>}
+            {catalog.map((l) => (
+              <button key={l} className={taskLabels.includes(l) ? 'on' : undefined} onClick={() => toggleLabel(l)}>
+                {taskLabels.includes(l) ? '✓ ' : ''}{l}
+              </button>
+            ))}
+            <div className="d-label-new">
+              <input
+                id="dLabelInput"
+                placeholder="新标签…（Enter 入库）"
+                maxLength={40}
+                value={newLabel}
+                onChange={(e) => setNewLabel(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); createLabel(); }
+                  if (e.key === 'Escape') { e.stopPropagation(); setNewLabel(''); }
+                }}
+              />
+            </div>
+          </div>
+        )}
         {editing === 'desc' ? (
           <textarea
             id="dDescEdit"

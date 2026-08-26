@@ -83,6 +83,11 @@ export async function updateTask(
   }
 }
 
+// 标签库新增（projects.labels；Rust emit labels-updated，此处主动刷新为准）
+export function addLabel(projectId: string, label: string): Promise<unknown> {
+  return invoke('add_label', { projectId, label });
+}
+
 // 任务详情（task 全字段 + 评论 + 活动流）
 export function issueDetail(id: string): Promise<IssueDetail> {
   return invoke<IssueDetail>('issue_detail', { id });

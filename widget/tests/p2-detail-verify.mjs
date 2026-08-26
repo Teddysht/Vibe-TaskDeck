@@ -25,16 +25,16 @@ const MOCK_JS = `
 try { localStorage.setItem('taskboard-theme', 'dark'); } catch (e) {} // THEME-BOOT 内联脚本读到 dark（注入期 documentElement 可能为 null，勿在此直接设 className）
 
 window.__MOCK__ = { tasks: [
-  { id: 'T-2', title: '待办甲', identifier: 'TSK-2', status: 'todo',        priority: 'high', dueDate: null, version: 1 },
+  { id: 'T-2', title: '待办甲', identifier: 'TSK-2', status: 'todo',        priority: 'high', dueDate: null, labels: ['设计'], version: 1 },
   { id: 'T-4', title: '进行中项', identifier: 'TSK-4', status: 'in_progress', priority: 'none', dueDate: null, version: 1 },
   { id: 'T-6', title: '被阻塞项', identifier: 'TSK-6', status: 'blocked',    priority: 'none', dueDate: null, version: 1 },
   { id: 'T-7', title: '已完成项', identifier: 'TSK-7', status: 'done',       priority: 'none', dueDate: null, version: 1 },
-]};
+], projects: [{ id: 'local', name: '本地', labels: ['设计', '紧急修复'] }] };
 window.__TAURI_INTERNALS__ = {
   invoke(cmd, args) {
     if (cmd === 'plugin:event|listen') return Promise.resolve(1);
     if (cmd === 'plugin:event|unlisten') return Promise.resolve();
-    if (cmd === 'load_data') return Promise.resolve({ tasks: window.__MOCK__.tasks, projects: [{ id: 'local', name: '本地' }] });
+    if (cmd === 'load_data') return Promise.resolve({ tasks: window.__MOCK__.tasks, projects: window.__MOCK__.projects });
     if (cmd === 'issue_detail') {
       const t = window.__MOCK__.tasks.find(t => t.id === args.id);
       if (!t) return Promise.reject({ code: 'TASK_NOT_FOUND', message: 'gone' });
@@ -53,6 +53,12 @@ window.__TAURI_INTERNALS__ = {
       if (t.version !== args.version) return Promise.reject({ code: 'VERSION_CONFLICT', message: 'conflict (mock)' });
       Object.assign(t, args.changes); t.version += 1;
       return Promise.resolve({ ...t });
+    }
+    if (cmd === 'add_label') {
+      const p = window.__MOCK__.projects.find(p => p.id === args.projectId);
+      if (!p) return Promise.reject({ code: 'PROJECT_NOT_FOUND', message: 'gone' });
+      if (!p.labels.includes(args.label)) p.labels.push(args.label);
+      return Promise.resolve({ id: p.id, labels: p.labels });
     }
     return Promise.resolve({});
   },
@@ -288,6 +294,66 @@ async function main() {
   }))()`);
   check('P2-2p 截止日清除（#dDueClear 契约）', dueCleared.chip.includes('+ 截止日') && dueCleared.mock === null,
     JSON.stringify(dueCleared));
+
+  // ---- v0.3.2 M4：标签编辑（契约 id：#dLabels #dLabelMenu #dLabelInput）----
+  // 展示：T-2 初始 1 个标签「设计」，chips 行回显
+  const labelsShown = await evalJs(`(() => ({
+    chips: [...document.querySelectorAll('#dLabels .label-chip')].map(c => c.dataset.label),
+    none: !!document.querySelector('#dLabels .d-label-none'),
+  }))()`);
+  check('P2-2q 详情展示任务标签 chips（#dLabels 契约）',
+    labelsShown.chips.join(',') === '设计' && labelsShown.none === false,
+    JSON.stringify(labelsShown));
+
+  // 勾选：编辑展开库菜单（2 项，设计=勾选态）→ 点「紧急修复」→ chip +1、mock 落库
+  await evalJs(`[...document.querySelectorAll('.d-sec-labels .d-sec-btn')].find(b => b.textContent === '编辑').click(); 'ok'`);
+  await sleep(300);
+  const labelMenu = await evalJs(`(() => ({
+    open: !!document.getElementById('dLabelMenu'),
+    items: [...document.querySelectorAll('#dLabelMenu > button')].map(b => ({ label: b.textContent.trim(), on: b.classList.contains('on') })),
+  }))()`);
+  await evalJs(`[...document.querySelectorAll('#dLabelMenu > button')].find(b => b.textContent.includes('紧急修复')).click(); 'ok'`);
+  await sleep(600);
+  const labelToggled = await evalJs(`(() => ({
+    chips: [...document.querySelectorAll('#dLabels .label-chip')].map(c => c.dataset.label),
+    mock: window.__MOCK__.tasks.find(t => t.id === 'T-2').labels,
+    menuKept: !!document.getElementById('dLabelMenu'),
+  }))()`);
+  check('P2-2r 库标签勾选追加（#dLabelMenu 契约）',
+    labelMenu.open === true && labelMenu.items.length === 2 && labelMenu.items[0].on === true
+      && labelToggled.chips.join(',') === '设计,紧急修复' && labelToggled.mock.join(',') === '设计,紧急修复',
+    `menu=${JSON.stringify(labelMenu)} after=${JSON.stringify(labelToggled)}`);
+
+  // 新建：输入「里程碑」Enter → 入库（mock 项目 labels）+ 自动勾选到任务
+  await evalJs(`(() => {
+    const inp = document.getElementById('dLabelInput');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(inp, '里程碑');
+    inp.dispatchEvent(new Event('input', { bubbles: true }));
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return 'ok';
+  })()`);
+  await sleep(800);
+  const labelCreated = await evalJs(`(() => ({
+    chips: [...document.querySelectorAll('#dLabels .label-chip')].map(c => c.dataset.label),
+    catalog: window.__MOCK__.projects[0].labels,
+    taskLabels: window.__MOCK__.tasks.find(t => t.id === 'T-2').labels,
+    inputCleared: document.getElementById('dLabelInput') ? document.getElementById('dLabelInput').value : 'gone',
+  }))()`);
+  check('P2-2s 新标签入库并自动勾选（#dLabelInput 契约）',
+    labelCreated.catalog.includes('里程碑') && labelCreated.taskLabels.includes('里程碑')
+      && labelCreated.chips.join(',') === '设计,紧急修复,里程碑' && labelCreated.inputCleared === '',
+    JSON.stringify(labelCreated));
+
+  // 取消勾选：点已勾选的「设计」→ chip 消失、mock 同步移除
+  await evalJs(`[...document.querySelectorAll('#dLabelMenu > button')].find(b => b.textContent.includes('设计')).click(); 'ok'`);
+  await sleep(600);
+  const labelOff = await evalJs(`(() => ({
+    chips: [...document.querySelectorAll('#dLabels .label-chip')].map(c => c.dataset.label),
+    mock: window.__MOCK__.tasks.find(t => t.id === 'T-2').labels,
+  }))()`);
+  check('P2-2t 取消勾选移除标签', labelOff.chips.join(',') === '紧急修复,里程碑' && labelOff.mock.join(',') === '紧急修复,里程碑',
+    JSON.stringify(labelOff));
 
   // 详情态截图
   const shot = await send('Page.captureScreenshot', { format: 'png' });

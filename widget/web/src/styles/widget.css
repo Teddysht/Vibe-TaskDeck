@@ -253,6 +253,20 @@ html.light .large .hd .mark .bm-dark-group{display:none}
 .detail .d-title-input{font-size:var(--font-lg);font-weight:600;line-height:1.35;color:var(--text-primary);overflow-wrap:anywhere;width:100%;padding:2px 4px;margin:-2px -4px;border-radius:var(--radius-sm);border:1px solid var(--accent);background:var(--bg-surface-2);font-family:inherit}
 .detail .d-desc-edit{font-size:var(--font-sm);line-height:1.55;color:var(--text-primary);white-space:pre-wrap;overflow-wrap:anywhere;width:100%;padding:10px 11px;border-radius:var(--radius-md);border:1px solid var(--accent);background:var(--bg-surface-2);font-family:inherit;resize:vertical;min-height:64px}
 .detail .d-sec{font-size:var(--font-xs);font-weight:600;color:var(--text-weak);letter-spacing:.5px;margin-top:2px}
+/* M4 标签小节：头行 flex（标题+编辑钮）→ chips 行 → 文档流菜单（窄窗不裁切，对齐 fullboard 口径） */
+.detail .d-sec-labels{display:flex;align-items:center;gap:6px;margin-top:10px}
+.detail .d-sec-labels .d-sec-btn{margin-left:auto;border:none;background:transparent;color:var(--accent-hover);font-size:var(--font-xs);font-family:inherit;cursor:pointer;padding:0}
+.detail .d-sec-labels .d-sec-btn:hover{text-decoration:underline}
+.detail .d-labels{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:5px}
+.detail .d-labels .label-chip{font-size:var(--font-xs);padding:1px 6px;border-radius:var(--radius-xs);background:var(--bg-surface-2);color:var(--text-secondary);white-space:nowrap}
+.detail .d-label-none{font-size:var(--font-sm);color:var(--text-weak)}
+.detail .d-label-menu{display:flex;flex-direction:column;gap:2px;padding:6px;margin-top:6px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-surface-2)}
+.detail .d-label-menu>button{border:none;background:transparent;color:var(--text-secondary);font-size:var(--font-xs);font-family:inherit;text-align:left;padding:4px 8px;border-radius:var(--radius-sm);cursor:pointer}
+.detail .d-label-menu>button:hover{background:var(--bg-surface-3);color:var(--text-primary)}
+.detail .d-label-menu>button.on{color:var(--accent-hover);font-weight:600}
+.detail .d-label-new{display:flex;padding-top:4px;border-top:1px solid var(--border-subtle)}
+.detail .d-label-new input{flex:1;min-width:0;font-size:var(--font-xs);font-family:inherit;color:var(--text-primary);background:var(--bg-surface);border:1px solid var(--border-strong);border-radius:var(--radius-xs);padding:3px 7px}
+.detail .d-label-new input:focus{outline:none;border-color:var(--accent)}
 .detail .d-comments{display:flex;flex-direction:column;gap:2px}
 .detail .d-c{padding:8px 10px;border-radius:var(--radius-md)}
 .detail .d-c:hover{background:var(--bg-surface-2)}
