@@ -8,7 +8,7 @@ import { ROT_ORDER } from '../../lib/types';
 import type { Project, Task } from '../../lib/types';
 import { EMPTY_TASK_FILTERS, type TaskFilters } from '../taskFilters';
 
-export type ViewMode = 'board' | 'list';
+export type ViewMode = 'board' | 'list' | 'dashboard';
 
 interface BoardState {
   tasks: Task[]; // 含归档（archivedAt 非空即归档态）

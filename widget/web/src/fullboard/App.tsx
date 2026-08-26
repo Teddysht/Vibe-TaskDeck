@@ -15,6 +15,7 @@ import IssueListView from './list/IssueListView';
 import FilterBar from './filters/FilterBar';
 import NewTaskPopover from './panels/NewTaskPopover';
 import OtherTasksPanel from './panels/OtherTasksPanel';
+import DashboardView from './panels/DashboardView';
 import SettingsDialog, { type ReleaseInfo } from './panels/SettingsDialog';
 import TaskContextMenu, { type MenuState } from './shared/TaskContextMenu';
 import WindowControls from './shared/WindowControls';
@@ -115,11 +116,11 @@ export default function App() {
     select(task.id);
   }
 
-  function switchView(v: 'board' | 'list') {
+  function switchView(v: 'board' | 'list' | 'dashboard') {
     setViewMode(v);
     const url = new URL(window.location.href);
-    if (v === 'list') url.searchParams.set('view', 'list');
-    else url.searchParams.delete('view');
+    if (v === 'board') url.searchParams.delete('view');
+    else url.searchParams.set('view', v);
     window.history.replaceState(null, '', url);
   }
 
@@ -143,6 +144,10 @@ export default function App() {
           <button className={viewMode === 'list' ? 'on' : ''} onClick={() => switchView('list')}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
             列表
+          </button>
+          <button className={viewMode === 'dashboard' ? 'on' : ''} onClick={() => switchView('dashboard')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 13a9 9 0 1 1 9 9" /><path d="M12 8v4l3 2" /></svg>
+            仪表盘
           </button>
         </div>
         {!online && <span className="fb-offline-hint">数据层不可用，正在重试…</span>}
@@ -182,8 +187,25 @@ export default function App() {
       <div className="fb-main flex min-h-0 flex-1">
         {viewMode === 'board' ? (
           <BoardView onCardClick={onCardClick} onContextMenu={(task, x, y) => setMenu({ task, x, y })} />
-        ) : (
+        ) : viewMode === 'list' ? (
           <IssueListView onRowClick={onCardClick} />
+        ) : (
+          <DashboardView
+            onGotoColumn={(status) => {
+              // 跳看板：无具体状态时仅切视图；有则带筛选参数（列定位由列滚动承担）
+              switchView('board');
+              if (status) {
+                const url = new URL(window.location.href);
+                url.searchParams.set('status', status);
+                window.history.replaceState(null, '', url);
+                // 触发 FilterBar 的 popstate 逻辑需要真实导航，这里直接写 store
+                useBoardStore.getState().setFilters({
+                  ...useBoardStore.getState().filters,
+                  statuses: [status],
+                });
+              }
+            }}
+          />
         )}
         {selectedId && (
           <TaskDetailPanel taskId={selectedId} closing={detailClosing} onClose={closeDetail} />
