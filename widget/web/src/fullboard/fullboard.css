@@ -62,13 +62,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .fb-header .sp { flex: 1 }
 .fb-brand { display: flex; align-items: center; gap: 10px; min-width: 0 }
-/* mark=应用图标本体（无容器底，svg 自带白底板），26px 对齐标题栏行高 */
+/* mark=应用图标本体（无容器底，svg 自带白底板），26px 对齐标题栏行高。
+   双主题：暗色 A2 白底版 / 亮色同构反色版（brand 渐变底+白柱）。 */
 .fb-brand .mark {
   width: 26px; height: 26px;
   flex: 0 0 auto;
   display: flex; align-items: center; justify-content: center;
 }
 .fb-brand .mark svg { width: 26px; height: 26px; display: block }
+.fb-brand .mark .bm-light-board, .fb-brand .mark .bm-light-group { display: none }
+html.light .fb-brand .mark .bm-light-board, html.light .fb-brand .mark .bm-light-group { display: block }
+html.light .fb-brand .mark .bm-dark-group { display: none }
 .fb-brand .tt { font-size: 13px; font-weight: 600; line-height: 1.2; color: var(--text-primary); white-space: nowrap }
 .fb-offline-hint { font-size: var(--font-xs); color: var(--danger-soft); white-space: nowrap }
 

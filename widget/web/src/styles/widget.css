@@ -88,9 +88,14 @@
 .large.leaving{opacity:0;transform:translateY(-4px) scale(.99);
   transition:opacity 120ms var(--ease-out),transform 120ms var(--ease-out)}
 .large .hd{display:flex;align-items:center;gap:10px;padding:13px 14px;border-bottom:1px solid var(--border-subtle);-webkit-app-region:drag}
-/* mark=应用图标本体（无容器底，svg 自带白底板），28px 撑起视觉重量 */
+/* mark=应用图标本体（无容器底，svg 自带白底板），28px 撑起视觉重量。
+   双主题：暗色用 A2 白底版；亮色切同构反色版（brand 渐变底+白柱）——
+   白底板在亮色 UI 上会融化。 */
 .large .hd .mark{width:28px;height:28px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
 .large .hd .mark svg{width:28px;height:28px;display:block}
+.large .hd .mark .bm-light-board,.large .hd .mark .bm-light-group{display:none}
+html.light .large .hd .mark .bm-light-board,html.light .large .hd .mark .bm-light-group{display:block}
+html.light .large .hd .mark .bm-dark-group{display:none}
 .large .hd .tt{font-size:var(--font-md);font-weight:600;line-height:1.2}
 .large .hd .sub{font-size:var(--font-sm);color:var(--text-weak);line-height:1.4}
 .large .hd .sp{flex:1}
