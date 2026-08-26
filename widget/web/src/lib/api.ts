@@ -75,7 +75,7 @@ export function setSize(w: number, h: number): void {
   invoke('set_window_size', { w, h }).catch(() => {});
 }
 
-// 退出挂件
+// 隐藏挂件（驻留托盘；退出走托盘菜单）
 export function closeWidget(): void {
   invoke('close_window', {}).catch(() => {});
 }

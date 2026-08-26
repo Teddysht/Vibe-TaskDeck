@@ -18,12 +18,20 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
-    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "targets": [
+      "nsis"
+    ],
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
     "windows": {
       "nsis": {
-        "languages": ["SimpChinese"],
-        "displayLanguageSelector": false
+        "languages": [
+          "SimpChinese"
+        ],
+        "displayLanguageSelector": false,
+        "installerHooks": "./installer-hooks.nsh"
       }
     }
   }

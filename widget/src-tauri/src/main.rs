@@ -204,51 +204,63 @@ fn main() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
-        // 拖拽收边（防抖 + 左键检测）：拖拽过程零干预（跨屏自由拖动）；
-        // 松手后窗口若探出屏幕边缘（Windows 允许部分越界），把窗口收回
-        // 与其重叠面积最大的显示器内。Moved 高频触发只记时间戳，静止
-        // 300ms 且左键已松开才执行一次 clamp；armed 保证同一时刻仅一条
-        // 防抖线程。尺寸切换的同步 clamp 见 commands::set_window_size。
-        if let tauri::RunEvent::WindowEvent {
-            label,
-            event: tauri::WindowEvent::Moved(_),
-            ..
-        } = event
-        {
-            if label == "main" {
-                let state = app_handle.state::<MoveClamp>();
-                *state.last_moved.lock().unwrap() = Some(Instant::now());
-                if !state.armed.swap(true, Ordering::AcqRel) {
-                    let app = app_handle.clone();
-                    std::thread::spawn(move || {
-                        if let Some(win) = app.get_webview_window("main") {
-                            let state = app.state::<MoveClamp>();
-                            let deadline = Instant::now() + Duration::from_secs(15);
-                            loop {
-                                std::thread::sleep(Duration::from_millis(100));
-                                let Some(t) = *state.last_moved.lock().unwrap() else {
-                                    break;
-                                };
-                                if Instant::now().duration_since(t) < Duration::from_millis(300) {
-                                    continue;
-                                }
-                                // 拖拽进行中（左键按住）：继续等，绝不打断
-                                #[cfg(target_os = "windows")]
-                                {
-                                    if drag_button_down() && Instant::now() < deadline {
+        // 窗口事件两分支（单 match 避免 event 被 move 两次）：
+        // 1) 关闭驻留：主窗收到关闭请求（× / close_window 命令）时拦截
+        //    prevent_close 改为隐藏——进程常驻托盘（挂件类应用惯例：
+        //    「关闭」≠「退出」，退出走托盘菜单「退出」，由 quit 菜单
+        //    app.exit(0) 完成并释放单实例锁）。
+        // 2) 拖拽收边（防抖 + 左键检测）：拖拽过程零干预（跨屏自由拖动）；
+        //    松手后窗口若探出屏幕边缘（Windows 允许部分越界），把窗口收回
+        //    与其重叠面积最大的显示器内。Moved 高频触发只记时间戳，静止
+        //    300ms 且左键已松开才执行一次 clamp；armed 保证同一时刻仅一条
+        //    防抖线程。尺寸切换的同步 clamp 见 commands::set_window_size。
+        if let tauri::RunEvent::WindowEvent { label, event: win_event, .. } = event {
+            if label != "main" {
+                return;
+            }
+            match win_event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    if let Some(win) = app_handle.get_webview_window("main") {
+                        let _ = win.hide();
+                    }
+                }
+                tauri::WindowEvent::Moved(_) => {
+                    let state = app_handle.state::<MoveClamp>();
+                    *state.last_moved.lock().unwrap() = Some(Instant::now());
+                    if !state.armed.swap(true, Ordering::AcqRel) {
+                        let app = app_handle.clone();
+                        std::thread::spawn(move || {
+                            if let Some(win) = app.get_webview_window("main") {
+                                let state = app.state::<MoveClamp>();
+                                let deadline = Instant::now() + Duration::from_secs(15);
+                                loop {
+                                    std::thread::sleep(Duration::from_millis(100));
+                                    let Some(t) = *state.last_moved.lock().unwrap() else {
+                                        break;
+                                    };
+                                    if Instant::now().duration_since(t) < Duration::from_millis(300) {
                                         continue;
                                     }
+                                    // 拖拽进行中（左键按住）：继续等，绝不打断
+                                    #[cfg(target_os = "windows")]
+                                    {
+                                        if drag_button_down() && Instant::now() < deadline {
+                                            continue;
+                                        }
+                                    }
+                                    commands::clamp_to_monitor(&win);
+                                    break;
                                 }
-                                commands::clamp_to_monitor(&win);
-                                break;
                             }
-                        }
-                        // 无论哪条路径退出都复位，允许下一轮拖拽重新武装
-                        if let Some(state) = app.try_state::<MoveClamp>() {
-                            state.armed.store(false, Ordering::SeqCst);
-                        }
-                    });
+                            // 无论哪条路径退出都复位，允许下一轮拖拽重新武装
+                            if let Some(state) = app.try_state::<MoveClamp>() {
+                                state.armed.store(false, Ordering::SeqCst);
+                            }
+                        });
+                    }
                 }
+                _ => {}
             }
         }
     });

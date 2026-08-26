@@ -480,11 +480,11 @@ pub fn set_window_size(app: AppHandle, w: f64, h: f64) {
     }
 }
 
-/// 退出挂件（关闭窗口即退出应用）
+/// 关闭挂件窗口（驻留托盘：隐藏主窗，进程不退出；退出走托盘「退出」）
 #[tauri::command]
 pub fn close_window(app: AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
-        let _ = win.close();
+        let _ = win.hide();
     }
 }
 

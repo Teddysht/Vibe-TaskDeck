@@ -89,7 +89,7 @@ export default function Large({ hidden, entering, leaving, onCollapse }: Props) 
         <div className="ic" id="collapseBtn" title="收起" role="button" tabIndex={0} onClick={onCollapse}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M7 10l5 5 5-5" /></svg>
         </div>
-        <div className="ic close" id="closeBtn" title="退出挂件（关闭窗口）" role="button" tabIndex={0} onClick={closeWidget}>
+        <div className="ic close" id="closeBtn" title="隐藏挂件（常驻托盘，右键托盘图标可退出）" role="button" tabIndex={0} onClick={closeWidget}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 6L6 18M6 6l12 12" /></svg>
         </div>
       </div>
