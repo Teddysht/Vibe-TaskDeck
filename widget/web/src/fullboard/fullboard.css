@@ -16,9 +16,12 @@ body {
 
 /* ============ 根容器：窗口级圆角（与挂件 .mini/.large 同一语言） ============
    transparent 窗口 + 根 border-radius 裁出圆角；1px 描边补透明窗口丢失的
-   轮廓（DWM shadow 只给外阴影）。最大化时归零——贴边窗口圆角会切出缺口。 */
+   轮廓（DWM shadow 只给外阴影）。最大化时归零——贴边窗口圆角会切出缺口。
+   几何：absolute + inset 0 锚定视口（100% 高 + border 会溢出视口 1px，
+   溢出部分被裁后圆角处露出直角残边——即「圆角了但有直角描边」的根因）。 */
 .fb-root {
-  height: 100%;
+  position: absolute;
+  inset: 0;
   background: var(--bg-canvas);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
