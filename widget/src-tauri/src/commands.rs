@@ -403,13 +403,15 @@ pub async fn open_full_board(app: AppHandle) -> Result<serde_json::Value, db::Co
         .center()
         .min_inner_size(900.0, 520.0)
         // 无边框 + 自绘标题栏：与挂件主窗（decorations(false)）同一窗口语言，
-        // 避免系统亮色标题栏与暗色 UI 的割裂。shadow(true) 保留 DWM 窗口阴影
-        // （Windows 无框窗口默认丢阴影）；标题栏拖拽/最大化/关闭由前端实现。
+        // 避免系统亮色标题栏与暗色 UI 的割裂。标题栏拖拽/最大化/关闭由前端实现。
         // transparent + 页面圆角：与挂件同款方案——Win10 无系统窗口圆角，
         // 圆角靠透明窗口 + .fb-root 的 border-radius 裁剪（最大化时前端
         // 切 .maximized 类归零，避免贴边切出缺口）。
+        // shadow(false)：shadow(true) 时 DWM 给透明窗口画带 8px 边框厚度的
+        // 阴影帧（实测 EXTENDED_FRAME_BOUNDS 比窗口矩形小 8px），四角形成
+        // 直角暗边叠在页面圆角外——挂件主窗同款 shadow(false) 根治。
         .decorations(false)
-        .shadow(true)
+        .shadow(false)
         .transparent(true)
         // HTML5 drag-and-drop 修复：wry 默认给 WebView2 注册 OS 级 OLE
         // drop target（文件拖放用），会吞掉页面内的 HTML5 DnD——看板卡片
