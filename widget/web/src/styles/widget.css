@@ -226,7 +226,15 @@ html.light .large .hd .mark .bm-dark-group{display:none}
 .detail .d-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:var(--font-xs);color:var(--text-weak);font-variant-numeric:tabular-nums}
 .detail .d-meta .overdue{color:var(--danger-soft);font-weight:600}
 .detail .d-meta .agent{color:var(--accent-hover)}
-.detail .d-desc{font-size:var(--font-sm);line-height:1.55;color:var(--text-secondary);white-space:pre-wrap;overflow-wrap:anywhere;padding:10px 11px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-surface-2)}
+.detail .d-desc{font-size:var(--font-sm);line-height:1.55;color:var(--text-secondary);white-space:pre-wrap;overflow-wrap:anywhere;padding:10px 11px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-surface-2);cursor:text}
+.detail .d-desc:hover{border-color:var(--border-strong);transition:border-color var(--duration-fast) var(--ease-out)}
+.detail .d-desc.d-desc-add{color:var(--text-weak);cursor:pointer}
+.detail .d-desc.d-desc-add:hover{color:var(--text-secondary)}
+.detail .d-title{cursor:text}
+.detail .d-title:hover{color:var(--text-primary)}
+/* 就地编辑态（v0.3.2）：标题 input / 描述 textarea，与 d-composer input 同一视觉口径 */
+.detail .d-title-input{font-size:var(--font-lg);font-weight:600;line-height:1.35;color:var(--text-primary);overflow-wrap:anywhere;width:100%;padding:2px 4px;margin:-2px -4px;border-radius:var(--radius-sm);border:1px solid var(--accent);background:var(--bg-surface-2);font-family:inherit}
+.detail .d-desc-edit{font-size:var(--font-sm);line-height:1.55;color:var(--text-primary);white-space:pre-wrap;overflow-wrap:anywhere;width:100%;padding:10px 11px;border-radius:var(--radius-md);border:1px solid var(--accent);background:var(--bg-surface-2);font-family:inherit;resize:vertical;min-height:64px}
 .detail .d-sec{font-size:var(--font-xs);font-weight:600;color:var(--text-weak);letter-spacing:.5px;margin-top:2px}
 .detail .d-comments{display:flex;flex-direction:column;gap:2px}
 .detail .d-c{padding:8px 10px;border-radius:var(--radius-md)}

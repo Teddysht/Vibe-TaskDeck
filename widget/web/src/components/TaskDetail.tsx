@@ -4,8 +4,8 @@
  * 契约：#detail #dBack #dIdent #dStatus #dTitle #dAct #dMeta #dDesc
  * #dSec #dComments #dCEmpty #dcInput #dcSend；评论输入非受控（e2e 契约）。
  * ============================================================ */
-import { useEffect, useRef } from 'react';
-import { addComment, moveTask, refreshDetail } from '../lib/api';
+import { useEffect, useRef, useState } from 'react';
+import { addComment, moveTask, refreshDetail, updateTask } from '../lib/api';
 import { boardActions } from '../lib/actions';
 import { errMsg, showToast } from '../lib/toast';
 import { isOverdue, priLabel, shortDate, shortTime } from '../lib/format';
@@ -18,6 +18,11 @@ export default function TaskDetail() {
   const closeDetail = useAppStore((s) => s.closeDetail);
   const inputRef = useRef<HTMLInputElement>(null);
   const sendRef = useRef<HTMLButtonElement>(null);
+  // 就地编辑态（v0.3.2）：标题/描述点击进入，非受控（defaultValue + ref
+  // 读值，e2e 直接设 value 不派发事件——与 NewTaskPanel 同一硬契约）
+  const [editing, setEditing] = useState<'title' | 'desc' | null>(null);
+  const titleEditRef = useRef<HTMLInputElement>(null);
+  const descEditRef = useRef<HTMLTextAreaElement>(null);
 
   // 挂载或目标任务变化即拉取（等价旧 openDetail → refreshDetail；错误
   // 处理在 api 内 toast）。detailId 依赖：通知路由可 detail→detail 直切
@@ -96,6 +101,25 @@ export default function TaskDetail() {
     }
   }
 
+  // 就地保存（updateTask 含冲突重试；二次仍冲突保留编辑态不清空输入）
+  async function saveEdit(field: 'title' | 'desc', value: string) {
+    const task = useAppStore.getState().detail?.task;
+    if (!task) { setEditing(null); return; }
+    const v = value.trim();
+    const key = field === 'title' ? 'title' : 'description'; // 编辑态名 → API 字段名
+    const original = field === 'title' ? task.title : (task.description ?? '');
+    if (!v || v === original) { setEditing(null); return; }
+    try {
+      await updateTask(task, { [key]: v });
+      setEditing(null);
+      await refreshDetail();
+    } catch (err) {
+      console.error('update failed', err);
+      showToast(errMsg(err, '保存失败'), true);
+      // 保持编辑态：输入内容不丢，用户可改后重试或 Esc 放弃
+    }
+  }
+
   return (
     <div className="detail" id="detail" style={{ display: 'flex' }}>
       <div className="d-hd">
@@ -116,7 +140,31 @@ export default function TaskDetail() {
         </div>
       </div>
       <div className="d-scroll">
-        <div className="d-title" id="dTitle">{t.title}</div>
+        {editing === 'title' ? (
+          <input
+            id="dTitleInput"
+            ref={titleEditRef}
+            className="d-title-input"
+            defaultValue={t.title}
+            maxLength={240}
+            autoFocus
+            onBlur={() => setEditing(null)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                saveEdit('title', e.currentTarget.value);
+              }
+              if (e.key === 'Escape') {
+                e.stopPropagation(); // 先退出编辑，不冒泡给 App 级 Esc（会关详情）
+                setEditing(null);
+              }
+            }}
+          />
+        ) : (
+          <div className="d-title" id="dTitle" title="点击编辑标题" onClick={() => setEditing('title')}>
+            {t.title}
+          </div>
+        )}
         <div className="d-act" id="dAct">
           {acts.map((a) => (
             <button
@@ -130,10 +178,35 @@ export default function TaskDetail() {
           ))}
         </div>
         <div className="d-meta" id="dMeta">{meta}</div>
-        {t.description && t.description.trim() ? (
-          <div className="d-desc" id="dDesc" style={{ display: 'block' }}>{t.description}</div>
+        {editing === 'desc' ? (
+          <textarea
+            id="dDescEdit"
+            ref={descEditRef}
+            className="d-desc-edit"
+            defaultValue={t.description ?? ''}
+            maxLength={4000}
+            rows={3}
+            autoFocus
+            onBlur={() => setEditing(null)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                saveEdit('desc', e.currentTarget.value);
+              }
+              if (e.key === 'Escape') {
+                e.stopPropagation(); // 先退出编辑，不冒泡给 App 级 Esc（会关详情）
+                setEditing(null);
+              }
+            }}
+          />
+        ) : t.description && t.description.trim() ? (
+          <div className="d-desc" id="dDesc" title="点击编辑描述" onClick={() => setEditing('desc')}>
+            {t.description}
+          </div>
         ) : (
-          <div className="d-desc" id="dDesc" style={{ display: 'none' }} />
+          <div className="d-desc d-desc-add" id="dDesc" role="button" tabIndex={0} onClick={() => setEditing('desc')}>
+            + 补充描述
+          </div>
         )}
         <div className="d-sec" id="dSec">评论 {comments.length}</div>
         <div className="d-comments" id="dComments">

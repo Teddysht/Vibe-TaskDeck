@@ -47,6 +47,13 @@ window.__TAURI_INTERNALS__ = {
       t.status = args.status; t.version += 1;
       return Promise.resolve({ ...t });
     }
+    if (cmd === 'update_task') {
+      const t = window.__MOCK__.tasks.find(t => t.id === args.id);
+      if (!t) return Promise.reject({ code: 'TASK_NOT_FOUND', message: 'gone' });
+      if (t.version !== args.version) return Promise.reject({ code: 'VERSION_CONFLICT', message: 'conflict (mock)' });
+      Object.assign(t, args.changes); t.version += 1;
+      return Promise.resolve({ ...t });
+    }
     return Promise.resolve({});
   },
   transformCallback: () => 0,
@@ -156,6 +163,70 @@ async function main() {
   check('P2-2f 版本过期经重试后流转成功（徽章「已完成」）', act3.status === '已完成', `status="${act3.status}"`);
   check('P2-2g done 后动作条消失', act3.buttons === 0, `buttons=${act3.buttons}`);
   check('P2-2h 重试成功路径无误报 toast', act3.toastShow === false || !act3.toast.includes('请重试'), `toast="${act3.toast}" show=${act3.toastShow}`);
+
+  // ---- v0.3.2 就地编辑：标题 / 描述（契约 id：#dTitleInput / #dDescEdit）----
+  // 标题：点击进入编辑 → 改值回车 → 保存成功
+  await evalJs(`document.getElementById('dTitle').click(); 'ok'`);
+  await sleep(300);
+  const titleEdit = await evalJs(`(() => {
+    const inp = document.getElementById('dTitleInput');
+    if (!inp) return { ok: false };
+    inp.value = '就地编辑后的标题';
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return { ok: true };
+  })()`);
+  await sleep(600);
+  const titleAfter = await evalJs(`document.getElementById('dTitle') ? document.getElementById('dTitle').textContent : 'editing'`);
+  check('P2-2i 标题点击编辑回车保存（#dTitle 契约）', titleEdit.ok === true && titleAfter === '就地编辑后的标题', `dTitle="${titleAfter}"`);
+
+  // 标题：Esc 只退出编辑不关详情（App 级 Esc 分层）
+  await evalJs(`document.getElementById('dTitle').click(); 'ok'`);
+  await sleep(300);
+  const escResult = await evalJs(`(() => {
+    const inp = document.getElementById('dTitleInput');
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    return new Promise(r => setTimeout(() => r({
+      inputGone: !document.getElementById('dTitleInput'),
+      detailStillOpen: document.getElementById('detail').style.display !== 'none',
+      titleKept: document.getElementById('dTitle').textContent,
+    }), 250));
+  })()`);
+  check('P2-2j Esc 退出编辑态但不关详情', escResult.inputGone === true && escResult.detailStillOpen === true && escResult.titleKept === '就地编辑后的标题',
+    JSON.stringify(escResult));
+
+  // 描述：无描述时「+ 补充描述」占位 → 点击进入 textarea → 回车保存
+  const descBefore = await evalJs(`document.getElementById('dDesc') ? document.getElementById('dDesc').textContent : 'absent'`);
+  await evalJs(`document.getElementById('dDesc').click(); 'ok'`);
+  await sleep(300);
+  const descEdit = await evalJs(`(() => {
+    const ta = document.getElementById('dDescEdit');
+    if (!ta) return { ok: false };
+    ta.value = '人补的上下文描述';
+    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return { ok: true };
+  })()`);
+  await sleep(600);
+  const descAfter = await evalJs(`document.getElementById('dDesc') ? document.getElementById('dDesc').textContent : 'editing'`);
+  check('P2-2k 描述占位→编辑→保存（#dDescEdit 契约）', descBefore.includes('补充描述') && descEdit.ok === true && descAfter === '人补的上下文描述',
+    `before="${descBefore}" after="${descAfter}"`);
+
+  // 冲突重试：外部 bump version 后改标题 → 重读重试成功
+  await evalJs(`window.__MOCK__.tasks.find(t => t.id === 'T-2').version += 1; 'bumped'`);
+  await evalJs(`document.getElementById('dTitle').click(); 'ok'`);
+  await sleep(300);
+  await evalJs(`(() => {
+    const inp = document.getElementById('dTitleInput');
+    inp.value = '冲突重试后的标题';
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return 'ok';
+  })()`);
+  await sleep(800);
+  const conflictAfter = await evalJs(`(() => ({
+    title: document.getElementById('dTitle') ? document.getElementById('dTitle').textContent : 'editing',
+    toastShow: !!(document.getElementById('toast') || {}).classList?.contains?.('show'),
+  }))()`);
+  check('P2-2l 标题编辑版本过期经重试成功', conflictAfter.title === '冲突重试后的标题' && conflictAfter.toastShow === false,
+    JSON.stringify(conflictAfter));
 
   // 详情态截图
   const shot = await send('Page.captureScreenshot', { format: 'png' });
