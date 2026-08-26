@@ -39,6 +39,7 @@ const REAL_SUITE = [
   { file: 'e2e-real-verify.mjs',    name: '真机端到端（数据/新建/流转/筛选/详情）' },
   { file: 'agent-real-verify.mjs',  name: 'agent 徽标真实链路（taskctl → 挂件）' },
   { file: 'fb-real-verify.mjs',     name: 'FB 双窗口真实链路（第二窗口/同步/SQLite 往返）' },
+  { file: 'receipt-real-verify.mjs', name: '回执闭环真机（身份区分/人机双向/游标/过滤）' },
 ];
 
 function runOne(t) {
