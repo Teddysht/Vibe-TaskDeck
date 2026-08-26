@@ -29,12 +29,19 @@ window.__TAURI_INTERNALS__ = {
     if (cmd === 'plugin:event|listen') return Promise.resolve(1);
     if (cmd === 'plugin:event|unlisten') return Promise.resolve();
     if (cmd === 'load_data') {
-      return Promise.resolve({ tasks: window.__TASKS__, projects: [{ id: 'local', name: '全局' }] });
+      // 必须返回新数组/新对象引用：真实 Rust 每次返回新值；同引用会被
+      // zustand selector 判等跳过重渲染（曾导致看板不挪列的假阴性）
+      return Promise.resolve({ tasks: window.__TASKS__.map(t => ({ ...t })), projects: [{ id: 'local', name: '全局' }] });
     }
     if (cmd === 'issue_detail') {
       const t = window.__TASKS__.find(t => t.id === args.id);
       if (!t) return Promise.reject({ code: 'TASK_NOT_FOUND', message: 'gone' });
       return Promise.resolve({ task: { ...t }, comments: window.__COMMENTS__.map((c, i) => ({ id: 'C-' + i, ...c })), activities: [] });
+    }
+    if (cmd === 'update_task') {
+      const t = window.__TASKS__.find(t => t.id === args.id);
+      if (t) { Object.assign(t, args.changes); t.version += 1; }
+      return Promise.resolve(t ? { ...t } : null);
     }
     return Promise.resolve({});
   },
@@ -200,6 +207,58 @@ async function main() {
   })()`);
   const entryOpNum = entryOpacity === null ? null : parseFloat(entryOpacity);
   check('FB-M3e 入场中 opacity < 1（@starting-style 起跳）', entryOpNum !== null && entryOpNum < 0.99, `opacity@60ms=${entryOpacity}`);
+
+  // ---- FB-M4 看板卡片跨列 FLIP（motion layoutId 共享元素） ----
+  await evalJs(`(() => { document.querySelector('.d-close').click(); return 'ok'; })()`);
+  await sleep(300);
+  await evalJs(`(() => { const btns = document.querySelectorAll('.fb-viewtoggle button'); btns[1].click(); return 'ok'; })()`);
+  await sleep(300);
+  const startCol = await evalJs(`(() => {
+    const card = document.querySelector('[data-task-id="T-1"]');
+    if (!card) return null;
+    return card.closest('.fb-col')?.dataset.status ?? null;
+  })()`);
+  check('FB-M4a 起始卡片位于 todo 列', startCol === 'todo', `col=${startCol}`);
+
+  await evalJs(`document.querySelector('[data-task-id="T-1"]').click(); 'ok'`);
+  await sleep(500);
+  // 状态流转前装好采样器：跨列瞬间 wrapper（card.parentElement）会被 motion
+  // 打上平移 transform（FLIP 在跑的证据）
+  await evalJs(`(() => {
+    window.__FLIP__ = { seen: false, samples: 0 };
+    const iv = setInterval(() => {
+      const card = document.querySelector('[data-task-id="T-1"]');
+      const wrap = card && card.parentElement;
+      if (wrap) {
+        window.__FLIP__.samples++;
+        const tr = getComputedStyle(wrap).transform;
+        if (tr && tr !== 'none') window.__FLIP__.seen = true;
+      }
+    }, 25);
+    setTimeout(() => clearInterval(iv), 1200);
+    return 'sampler-on';
+  })()`);
+  await evalJs(`document.querySelector('.d-status-trigger').click(); 'trigger-clicked'`);
+  await sleep(200); // 等 React 把 popover 渲染进 DOM
+  const optClicked = await evalJs(`(() => {
+    const opts = [...document.querySelectorAll('.d-status-pop [role="option"]')];
+    const done = opts.find(o => o.textContent.includes('已完成'));
+    if (!done) return 'no-done-option';
+    done.click();
+    return 'clicked';
+  })()`);
+  check('FB-M4-pre 状态菜单「已完成」可点', optClicked === 'clicked', optClicked);
+  await sleep(1500);
+  const flipResult = await evalJs(`(() => {
+    const card = document.querySelector('[data-task-id="T-1"]');
+    return {
+      seen: window.__FLIP__?.seen === true,
+      samples: window.__FLIP__?.samples ?? 0,
+      col: card ? card.closest('.fb-col')?.dataset.status : null,
+    };
+  })()`);
+  check('FB-M4b 状态流转后卡片位于 done 列', flipResult.col === 'done', `col=${flipResult.col}`);
+  check('FB-M4c 跨列过程 wrapper 有平移 transform（FLIP 动画在跑）', flipResult.seen === true && flipResult.samples > 0, JSON.stringify(flipResult));
 
   fs.writeFileSync(OUT, JSON.stringify({ results }, null, 2), 'utf8');
   console.log('---');

@@ -1,12 +1,16 @@
 /* ============================================================
  * 列表视图 —— 表格态（对齐上游 IssueListView：identifier/标题/状态/
  * 优先级/截止/创建者；行点击进详情）
+ * 行 motion layout：任务排序变化时行 FLIP 平移（同列换位）；纯筛选
+ * 增删行不产生动画（unmount 无对应位）。layout="position" 不缩放行内容。
  * ============================================================ */
+import { motion } from 'motion/react';
 import { PRI_LABEL, STATUS_LABEL } from '../../lib/types';
 import type { Task } from '../../lib/types';
 import { isOverdue, shortDate } from '../../lib/format';
 import { matchesTaskFilters } from '../taskFilters';
 import { useBoardStore } from '../store/useBoardStore';
+import { layoutTransition } from '../shared/motionTokens';
 
 export default function IssueListView({ onRowClick }: { onRowClick: (task: Task) => void }) {
   const tasks = useBoardStore((s) => s.tasks);
@@ -27,7 +31,7 @@ export default function IssueListView({ onRowClick }: { onRowClick: (task: Task)
       </div>
       <div className="fb-list-body">
         {rows.map((t) => (
-          <div key={t.id} className="fb-list-row" data-task-id={t.id} onClick={() => onRowClick(t)}>
+          <motion.div key={t.id} layout="position" transition={layoutTransition} className="fb-list-row" data-task-id={t.id} onClick={() => onRowClick(t)}>
             <span className="c-id">{t.identifier}</span>
             <span className="c-title">
               {t.creatorType === 'agent' && <span className="ag" title="AI 会话创建">AG</span>}
@@ -46,7 +50,7 @@ export default function IssueListView({ onRowClick }: { onRowClick: (task: Task)
               {shortDate(t.dueDate) || '—'}
             </span>
             <span className="c-creator">{t.creatorName}</span>
-          </div>
+          </motion.div>
         ))}
         {rows.length === 0 && <div className="fb-list-empty">没有匹配的任务</div>}
       </div>
