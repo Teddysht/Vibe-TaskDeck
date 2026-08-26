@@ -226,6 +226,23 @@ html.light .large .hd .mark .bm-dark-group{display:none}
 .detail .d-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:var(--font-xs);color:var(--text-weak);font-variant-numeric:tabular-nums}
 .detail .d-meta .overdue{color:var(--danger-soft);font-weight:600}
 .detail .d-meta .agent{color:var(--accent-hover)}
+/* M3 元信息就地编辑：已有值 chip（虚线下划线暗示可点）与缺失值「+」入口 */
+.detail .d-meta .d-meta-edit{cursor:pointer;border-bottom:1px dashed var(--border-strong)}
+.detail .d-meta .d-meta-edit:hover,.detail .d-meta .d-meta-edit.overdue:hover{color:var(--text-secondary)}
+.detail .d-meta .d-meta-add{cursor:pointer;color:var(--text-weak);opacity:.75}
+.detail .d-meta .d-meta-add:hover{color:var(--text-secondary);opacity:1}
+/* 优先级菜单：chip 定位锚，绝对弹出（不参与 meta 行 flex 流） */
+.detail .d-pri-wrap{position:relative;display:inline-flex}
+.detail .d-pri-menu{position:absolute;top:calc(100% + 6px);left:0;z-index:30;display:flex;flex-direction:column;min-width:88px;padding:4px;border-radius:var(--radius-md);border:1px solid var(--border-strong);background:var(--bg-surface);box-shadow:var(--fb-shadow-md)}
+.detail .d-pri-menu button{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:5px 10px;border:none;border-radius:var(--radius-sm);background:transparent;color:var(--text-secondary);font-size:var(--font-xs);font-family:inherit;cursor:pointer;text-align:left}
+.detail .d-pri-menu button:hover{background:var(--bg-surface-2);color:var(--text-primary)}
+.detail .d-pri-menu button.on{color:var(--accent-hover);font-weight:600}
+/* 截止日编辑：原生 date 控件（UA 日历随 color-scheme）；× 清除键 */
+.detail .d-due-edit{display:inline-flex;align-items:center;gap:4px}
+.detail .d-due-edit input[type="date"]{font-size:var(--font-xs);font-family:inherit;color:var(--text-secondary);background:var(--bg-surface-2);border:1px solid var(--accent);border-radius:var(--radius-sm);padding:2px 6px}
+.detail .d-due-edit input[type="date"]:focus{outline:none;border-color:var(--border-hover)}
+.detail .d-due-edit button{border:none;background:transparent;color:var(--text-weak);font-size:var(--font-sm);cursor:pointer;padding:0 2px;line-height:1}
+.detail .d-due-edit button:hover{color:var(--danger-soft)}
 .detail .d-desc{font-size:var(--font-sm);line-height:1.55;color:var(--text-secondary);white-space:pre-wrap;overflow-wrap:anywhere;padding:10px 11px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-surface-2);cursor:text}
 .detail .d-desc:hover{border-color:var(--border-strong);transition:border-color var(--duration-fast) var(--ease-out)}
 .detail .d-desc.d-desc-add{color:var(--text-weak);cursor:pointer}

@@ -228,6 +228,67 @@ async function main() {
   check('P2-2l 标题编辑版本过期经重试成功', conflictAfter.title === '冲突重试后的标题' && conflictAfter.toastShow === false,
     JSON.stringify(conflictAfter));
 
+  // ---- v0.3.2 M3：优先级菜单 / 截止日编辑（契约 id：#dPri #dPriMenu #dDue #dDueInput #dDueClear）----
+  // 优先级：high chip 点击弹 5 项菜单 → 选「低」→ chip 即时更新、mock 落库
+  const priBefore = await evalJs(`document.getElementById('dPri').textContent`);
+  await evalJs(`document.getElementById('dPri').click(); 'ok'`);
+  await sleep(300);
+  const priItems = await evalJs(`document.getElementById('dPriMenu') ? [...document.querySelectorAll('#dPriMenu button')].map(b => b.dataset.p).join(',') : null`);
+  await evalJs(`document.querySelector('#dPriMenu button[data-p="low"]').click(); 'ok'`);
+  await sleep(600);
+  const priAfter = await evalJs(`(() => ({
+    chip: document.getElementById('dPri').textContent,
+    menuGone: !document.getElementById('dPriMenu'),
+    mock: window.__MOCK__.tasks.find(t => t.id === 'T-2').priority,
+  }))()`);
+  check('P2-2m 优先级菜单切换 high→low（#dPriMenu 契约）',
+    priBefore === '高优先级' && priItems === 'urgent,high,medium,low,none'
+      && priAfter.chip === '低优先级' && priAfter.menuGone === true && priAfter.mock === 'low',
+    `before="${priBefore}" items=${priItems} after=${JSON.stringify(priAfter)}`);
+
+  // 菜单外点击收起（document pointerdown 兜底，不选不保存）
+  await evalJs(`document.getElementById('dPri').click(); 'ok'`);
+  await sleep(250);
+  const menuOpened = await evalJs(`!!document.getElementById('dPriMenu')`);
+  await evalJs(`document.body.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); 'ok'`);
+  await sleep(250);
+  const menuClosed = await evalJs(`(() => !document.getElementById('dPriMenu'))()`);
+  check('P2-2n 菜单外点击收起（不改值）', menuOpened === true && menuClosed === true,
+    `opened=${menuOpened} closed=${menuClosed}`);
+
+  // 截止日：无值「+ 截止日」入口 → 原生 date 选 2026-09-30 → chip 回显 + mock 落库
+  const dueBefore = await evalJs(`document.getElementById('dDue') ? document.getElementById('dDue').textContent : null`);
+  await evalJs(`document.getElementById('dDue').click(); 'ok'`);
+  await sleep(300);
+  await evalJs(`(() => {
+    const inp = document.getElementById('dDueInput');
+    if (!inp) return 'no-input';
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set;
+    setter.call(inp, '2026-09-30');
+    inp.dispatchEvent(new Event('change', { bubbles: true }));
+    return 'ok';
+  })()`);
+  await sleep(600);
+  const dueAfter = await evalJs(`(() => ({
+    chip: document.getElementById('dDue') ? document.getElementById('dDue').textContent : 'editing',
+    mock: window.__MOCK__.tasks.find(t => t.id === 'T-2').dueDate,
+  }))()`);
+  check('P2-2o 截止日设置（#dDueInput 契约）', (dueBefore || '').includes('+ 截止日')
+    && dueAfter.chip === '截止 2026-09-30' && dueAfter.mock === '2026-09-30',
+    `before="${dueBefore}" after=${JSON.stringify(dueAfter)}`);
+
+  // 截止日清除：再次进入编辑态 → × → 回到「+ 截止日」占位、mock 置 null
+  await evalJs(`document.getElementById('dDue').click(); 'ok'`);
+  await sleep(300);
+  await evalJs(`document.getElementById('dDueClear').click(); 'ok'`);
+  await sleep(600);
+  const dueCleared = await evalJs(`(() => ({
+    chip: document.getElementById('dDue').textContent,
+    mock: window.__MOCK__.tasks.find(t => t.id === 'T-2').dueDate,
+  }))()`);
+  check('P2-2p 截止日清除（#dDueClear 契约）', dueCleared.chip.includes('+ 截止日') && dueCleared.mock === null,
+    JSON.stringify(dueCleared));
+
   // 详情态截图
   const shot = await send('Page.captureScreenshot', { format: 'png' });
   fs.writeFileSync(SHOT, Buffer.from(shot.result.data, 'base64'));
