@@ -41,9 +41,13 @@ export default function App() {
   useKeyboardShortcuts();
   useEffect(() => {
     loadBoardData().catch(markOffline);
-    // 启动恢复视图模式
+    // 启动恢复视图模式（仪表盘为默认视图）
     const view = new URLSearchParams(window.location.search).get('view');
-    if (view === 'list') useBoardStore.getState().setViewMode('list');
+    if (view === 'list' || view === 'board' || view === 'dashboard') {
+      useBoardStore.getState().setViewMode(view);
+    } else {
+      useBoardStore.getState().setViewMode('dashboard');
+    }
     // 更新检查：启动静默一次（失败零感知，不打扰）；有新版点亮齿轮徽标
     invoke<ReleaseInfo>('check_update')
       .then((r) => {
@@ -137,6 +141,10 @@ export default function App() {
           <div className="tt">任务看板</div>
         </div>
         <div className="fb-viewtoggle">
+          <button className={viewMode === 'dashboard' ? 'on' : ''} onClick={() => switchView('dashboard')}>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 13a9 9 0 1 1 9 9" /><path d="M12 8v4l3 2" /></svg>
+            仪表盘
+          </button>
           <button className={viewMode === 'board' ? 'on' : ''} onClick={() => switchView('board')}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><rect x="3" y="3" width="6" height="16" rx="1" /><rect x="11" y="3" width="6" height="10" rx="1" /><rect x="19" y="3" width="2" height="14" rx="1" /></svg>
             看板
@@ -144,10 +152,6 @@ export default function App() {
           <button className={viewMode === 'list' ? 'on' : ''} onClick={() => switchView('list')}>
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></svg>
             列表
-          </button>
-          <button className={viewMode === 'dashboard' ? 'on' : ''} onClick={() => switchView('dashboard')}>
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M3 13a9 9 0 1 1 9 9" /><path d="M12 8v4l3 2" /></svg>
-            仪表盘
           </button>
         </div>
         {!online && <span className="fb-offline-hint">数据层不可用，正在重试…</span>}

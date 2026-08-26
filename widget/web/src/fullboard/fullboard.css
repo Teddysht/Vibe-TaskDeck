@@ -1486,7 +1486,7 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
 .fb-set-goto:hover { filter: brightness(1.08) }
 .fb-set-goto:active { transform: scale(.98) }
 
-/* ============ 仪表盘视图（shadcn Card 组合；数据全前端派生） ============ */
+/* ============ 仪表盘视图（shadcn charts：RadialBar + Area；数据全前端派生） ============ */
 .fb-dash {
   flex: 1;
   min-width: 0;
@@ -1497,33 +1497,71 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
   gap: 16px;
 }
 
-/* 完成度主卡 */
-.fb-dash-hero {
+/* 第一行：完成度 + 趋势（宽窗双卡并排，窄窗堆叠） */
+.fb-dash-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+  gap: 16px;
+}
+@media (max-width: 1279px) {
+  .fb-dash-row { grid-template-columns: 1fr }
+}
+
+/* 卡片基底（shadcn Card） */
+.fb-dash-card {
   background: var(--bg-surface);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
-  padding: 20px 24px 18px;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   box-shadow: var(--fb-shadow-sm);
+  min-width: 0;
 }
-.fb-dash-hero header {
-  display: flex;
-  align-items: baseline;
-  gap: 12px;
+.fb-dash-card .card-hd {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: .4px;
+  color: var(--text-weak);
 }
-.fb-dash-hero h1 { font-size: 13px; font-weight: 600; letter-spacing: .2px }
-.fb-dash-hero .sub { font-size: var(--font-xs); color: var(--text-weak) }
-.fb-dash-hero .hero-value {
+
+/* 完成度主卡：环图 + 元信息双栏 */
+.fb-dash-hero .hero-flex {
   display: flex;
-  align-items: baseline;
-  gap: 2px;
-  font-variant-numeric: tabular-nums;
+  gap: 18px;
+  align-items: stretch;
+  min-height: 168px;
+}
+.fb-dash-hero .hero-ring {
+  position: relative;
+  width: 168px;
+  height: 168px;
+  flex: none;
+}
+.fb-dash-hero .ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
   line-height: 1;
 }
-.fb-dash-hero .hero-value strong { font-size: 44px; font-weight: 700; letter-spacing: -0.02em }
-.fb-dash-hero .hero-value .pct { font-size: 18px; font-weight: 600; color: var(--text-weak) }
+.fb-dash-hero .ring-center strong { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em }
+.fb-dash-hero .ring-center span { font-size: 13px; color: var(--text-weak); margin-top: 2px }
+.fb-dash-hero .hero-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  justify-content: center;
+}
+.fb-dash-hero .big-line { font-size: var(--font-sm); color: var(--text-secondary) }
+.fb-dash-hero .big-line .n { font-size: 17px; font-weight: 700; color: var(--text-primary); margin: 0 2px 0 8px; font-variant-numeric: tabular-nums }
+.fb-dash-hero .big-line .n:first-child { margin-left: 0 }
 
 /* 分布条：七状态分段（grow 按任务数占比） */
 .fb-dash-bar {
@@ -1562,27 +1600,42 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
 .fb-dash-legend .lg:hover { color: var(--text-primary) }
 .fb-dash-legend .dot { width: 7px; height: 7px; border-radius: 99px }
 
-/* 卡片网格 */
+/* 趋势卡：面积图随容器伸缩 */
+.fb-dash-trend .trend-chart { flex: 1; min-height: 168px; position: relative }
+.fb-dash-trend .trend-cap { display: flex; gap: 14px }
+.fb-dash-trend .cap-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+}
+.fb-dash-trend .cap-item .dot { width: 7px; height: 7px; border-radius: 99px }
+
+/* shadcn ChartTooltip 风格 */
+.fb-chart-tip {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  box-shadow: var(--fb-shadow-lg);
+  padding: 8px 10px;
+  font-size: var(--font-xs);
+  color: var(--text-secondary);
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 80px;
+}
+.fb-chart-tip .t { font-weight: 600; color: var(--text-primary); margin-bottom: 1px }
+.fb-chart-tip .item { display: flex; align-items: center; gap: 6px }
+.fb-chart-tip .item .dot { width: 7px; height: 7px; border-radius: 99px; flex: none }
+.fb-chart-tip .item b { margin-left: auto; color: var(--text-primary); font-variant-numeric: tabular-nums; padding-left: 10px }
+
+/* 第二行网格：auto-fit 动态列 */
 .fb-dash-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
   gap: 16px;
-}
-.fb-dash-card {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--radius-lg);
-  padding: 16px 18px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  box-shadow: var(--fb-shadow-sm);
-}
-.fb-dash-card .card-hd {
-  font-size: var(--font-xs);
-  font-weight: 600;
-  letter-spacing: .4px;
-  color: var(--text-weak);
 }
 
 /* 需要关注：三格统计 */
@@ -1628,37 +1681,6 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
 .fb-dash-list .due { font-size: var(--font-xs); color: var(--text-weak); font-variant-numeric: tabular-nums; flex: none }
 .fb-dash-list .due.od { color: var(--danger-soft); font-weight: 600 }
 
-/* 趋势迷你柱状（纯 div） */
-.fb-dash-chart {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
-  height: 110px;
-  padding-top: 14px;
-}
-.fb-dash-chart .col {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 3px;
-  height: 100%;
-  min-width: 0;
-}
-.fb-dash-chart .bar {
-  width: 100%;
-  max-width: 26px;
-  border-radius: 4px 4px 2px 2px;
-  background: var(--brand-500);
-  opacity: .85;
-  min-height: 2px;
-  transition: height var(--duration-base) var(--ease-out);
-}
-.fb-dash-chart .col:last-child .bar { background: var(--accent-hover); opacity: 1 }   /* 今天高亮 */
-.fb-dash-chart .n { font-size: 10px; color: var(--text-weak); font-variant-numeric: tabular-nums; height: 12px }
-.fb-dash-chart .l { font-size: 9.5px; color: var(--text-weak); white-space: nowrap }
-
 /* 人机分布 */
 .fb-dash-ratio { display: flex; flex-direction: column; gap: 8px }
 .fb-dash-ratio .track {
@@ -1671,7 +1693,7 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
 }
 .fb-dash-ratio .agent { background: var(--brand-500); min-width: 0 }
 .fb-dash-ratio .user { background: var(--gray-5); min-width: 0 }
-.fb-dash-ratio .cap { display: flex; justify-content: space-between }
+.fb-dash-ratio .cap { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 4px }
 .fb-dash-ratio .cap-item { font-size: var(--font-xs); color: var(--text-secondary); display: inline-flex; align-items: center; gap: 4px }
 
 /* 优先级速览 */
@@ -1679,11 +1701,17 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
 .fb-dash-pri .pri-chip { cursor: pointer; font-family: inherit; border: none }
 
 .fb-dash-none { font-size: var(--font-xs); color: var(--text-weak); padding: 4px 0 }
-.fb-dash-foot { font-size: var(--font-xs); color: var(--text-weak) }
 
+/* 窄窗适配：环图缩中、padding 收紧 */
 @media (max-width: 1279px) {
   .fb-dash { padding: 12px 14px 16px }
   .fb-dash-grid { grid-template-columns: 1fr }
+  .fb-dash-hero .hero-flex { flex-direction: row }
+  .fb-dash-hero .hero-ring { width: 140px; height: 140px }
+}
+@media (max-width: 780px) {
+  .fb-dash-hero .hero-flex { flex-direction: column; align-items: center }
+  .fb-dash-hero .hero-ring { width: 132px; height: 132px }
 }
 
 /* ---- 归档 Sheet（右侧弹窗，与详情 fb-detail 同一语言/同一响应式） ---- */

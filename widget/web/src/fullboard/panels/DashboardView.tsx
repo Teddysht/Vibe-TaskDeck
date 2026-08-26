@@ -1,126 +1,222 @@
 /* ============================================================
- * 仪表盘视图 —— 对齐上游 Dashboard 的功能语义（项目完成度），
- * 视觉用本项目 shadcn 语言（Card/Badge/Progress/Avatar 同构）。
- * 数据全部从 store 派生（零后端改动）：
- * · 完成度大数字（done / 未归档总数）
- * · 七状态分布条（分段进度，非独立进度条——状态间是整体占比关系）
- * · 需要关注：逾期 / 待评审 / 阻塞（可点击跳看板对应列）
- * · 最近 7 天创建趋势（迷你柱状，无图表库——纯 div 高度）
- * · 人机分布（AI vs 用户创建占比——产品定位的核心信号）
+ * 仪表盘视图 —— 对齐上游 Dashboard 的功能语义（项目完成度）。
+ * 图表：recharts（shadcn charts 官方底座），shadcn ChartTooltip 风格。
+ * 布局：auto-fit grid 动态适配（≥2 列卡片并排 → 窄窗单列堆叠），
+ *       图表用 ResponsiveContainer 随容器伸缩。
+ * 数据全部从 store 派生（零后端改动）。
  * ============================================================ */
+import { useMemo } from 'react';
+import {
+  Area,
+  AreaChart,
+  RadialBar,
+  RadialBarChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import { PRI_LABEL, STATUS_LABEL, STATUS_ORDER } from '../../lib/types';
 import type { Task } from '../../lib/types';
 import { isOverdue, shortDate } from '../../lib/format';
 import { useBoardStore } from '../store/useBoardStore';
 
-// 状态点配色（与看板列 col-dot 同源）
-const STATUS_COLOR: Record<string, string> = {
-  backlog: 'var(--gray-5)',
+// 状态色（与看板列 col-dot 同源；recharts 需实际色值）
+const STATUS_HEX: Record<string, string> = {
+  backlog: '#353842',
   todo: '#9ca3af',
-  in_progress: 'var(--brand-500)',
+  in_progress: '#6e8bff',
   in_review: '#c084fc',
-  done: 'var(--success)',
-  blocked: 'var(--danger)',
-  canceled: 'var(--gray-6)',
+  done: '#3fb877',
+  blocked: '#ef5046',
+  canceled: '#82868f',
 };
+
+// shadcn ChartTooltip 风格：card 底 + border + shadow
+function ChartTip({ active, payload, label }: {
+  active?: boolean;
+  payload?: Array<{ name?: string; value?: number | string; color?: string }>;
+  label?: string;
+}) {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="fb-chart-tip">
+      {label !== undefined && <div className="t">{label}</div>}
+      {payload.map((p, i) => (
+        <div key={i} className="item">
+          <span className="dot" style={{ background: p.color }} />
+          {p.name} <b>{p.value}</b>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export default function DashboardView({ onGotoColumn }: { onGotoColumn: (status: string) => void }) {
   const tasks = useBoardStore((s) => s.tasks);
   const online = useBoardStore((s) => s.online);
 
+  const model = useMemo(() => {
+    const live = tasks.filter((t) => !t.archivedAt);
+    const byStatus = new Map<string, Task[]>();
+    for (const t of live) {
+      const list = byStatus.get(t.status) ?? [];
+      list.push(t);
+      byStatus.set(t.status, list);
+    }
+    const done = byStatus.get('done') ?? [];
+    const inReview = byStatus.get('in_review') ?? [];
+    const blocked = byStatus.get('blocked') ?? [];
+    const overdue = live.filter((t) => isOverdue(t.dueDate) && t.status !== 'done' && t.status !== 'canceled');
+    const agent = live.filter((t) => t.creatorType === 'agent');
+    const total = live.length;
+    const pct = total === 0 ? 0 : Math.round((done.length / total) * 100);
+
+    // 近 7 天创建 + 完成（双序列面积）
+    const now = new Date();
+    const trend: Array<{ day: string; 创建: number; 完成: number }> = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const key = d.toISOString().slice(0, 10);
+      trend.push({
+        day: `${d.getMonth() + 1}/${d.getDate()}`,
+        创建: live.filter((t) => t.createdAt?.slice(0, 10) === key).length,
+        完成: done.filter((t) => (t as Task & { completedAt?: string }).completedAt?.slice(0, 10) === key).length,
+      });
+    }
+
+    // 3 天内到期（含逾期）清单
+    const upcoming = live
+      .filter((t) => {
+        if (t.status === 'done' || t.status === 'canceled' || !t.dueDate) return false;
+        return (new Date(t.dueDate).getTime() - now.getTime()) / 86400000 <= 3;
+      })
+      .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
+      .slice(0, 5);
+
+    return { live, byStatus, done, inReview, blocked, overdue, agent, total, pct, trend, upcoming };
+  }, [tasks]);
+
   if (!online) {
     return <div className="fb-offline">数据层不可用，正在重试…</div>;
   }
 
-  const live = tasks.filter((t) => !t.archivedAt);
-  const byStatus = new Map<string, Task[]>();
-  for (const t of live) {
-    const list = byStatus.get(t.status) ?? [];
-    list.push(t);
-    byStatus.set(t.status, list);
-  }
-  const done = byStatus.get('done') ?? [];
-  const inReview = byStatus.get('in_review') ?? [];
-  const blocked = byStatus.get('blocked') ?? [];
-  const overdue = live.filter((t) => isOverdue(t.dueDate) && t.status !== 'done' && t.status !== 'canceled');
-  const agent = live.filter((t) => t.creatorType === 'agent');
+  const { byStatus, done, inReview, blocked, overdue, agent, total, pct, trend, upcoming } = model;
 
-  const total = live.length;
-  const pct = total === 0 ? 0 : Math.round((done.length / total) * 100);
-
-  // 最近 7 天创建趋势（含今天）
-  const days: Array<{ label: string; count: number }> = [];
-  const now = new Date();
-  for (let i = 6; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    const key = d.toISOString().slice(0, 10);
-    days.push({
-      label: `${d.getMonth() + 1}/${d.getDate()}`,
-      count: live.filter((t) => t.createdAt?.slice(0, 10) === key).length,
-    });
-  }
-  const maxCount = Math.max(1, ...days.map((d) => d.count));
-
-  // 最近即将到期（未来 3 天内到期且未完成）
-  const upcoming = live
-    .filter((t) => {
-      if (t.status === 'done' || t.status === 'canceled' || !t.dueDate) return false;
-      const due = new Date(t.dueDate).getTime();
-      const diff = (due - now.getTime()) / 86400000;
-      return diff <= 3; // 含逾期
-    })
-    .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
-    .slice(0, 5);
+  // 环图数据（recharts RadialBar：完成度单环）
+  const ring = [{ name: '完成度', value: pct, fill: pct >= 80 ? '#3fb877' : pct >= 40 ? '#6e8bff' : '#8fa2ff' }];
 
   return (
     <div className="fb-dash">
-      {/* ---- 完成度主卡（上游 dashboard-heading 同位） ---- */}
-      <section className="fb-dash-hero">
-        <header>
-          <h1>项目完成度</h1>
-          <span className="sub">
-            {done.length} 个已完成 · {total - done.length} 个尚未结束
-          </span>
-        </header>
-        <div className="hero-value">
-          <strong>{pct}</strong>
-          <span className="pct">%</span>
-        </div>
-        {/* 分布条：七状态分段（整体 100% 占比关系） */}
-        <div className="fb-dash-bar" role="img" aria-label={`完成度 ${pct}%`}>
-          {total === 0 ? (
-            <span className="empty-track" />
-          ) : (
-            STATUS_ORDER.concat('canceled').map((s) => {
-              const n = byStatus.get(s)?.length ?? 0;
-              if (n === 0) return null;
-              return (
-                <button
-                  key={s}
-                  className="seg"
-                  style={{ background: STATUS_COLOR[s], flexGrow: n }}
-                  title={`${STATUS_LABEL[s]} ${n}`}
-                  onClick={() => onGotoColumn(s)}
-                />
-              );
-            })
-          )}
-        </div>
-        <div className="fb-dash-legend">
-          {STATUS_ORDER.concat('canceled')
-            .filter((s) => (byStatus.get(s)?.length ?? 0) > 0)
-            .map((s) => (
-              <button key={s} className="lg" onClick={() => onGotoColumn(s)} title={`查看 ${STATUS_LABEL[s]}列`}>
-                <span className="dot" style={{ background: STATUS_COLOR[s] }} />
-                {STATUS_LABEL[s]} {byStatus.get(s)!.length}
-              </button>
-            ))}
-        </div>
-      </section>
+      {/* ---- 第一行：完成度环图 + 状态分布（宽窗双卡并排） ---- */}
+      <div className="fb-dash-row">
+        <section className="fb-dash-card fb-dash-hero">
+          <div className="card-hd">项目完成度</div>
+          <div className="hero-flex">
+            <div className="hero-ring">
+              <ResponsiveContainer width="100%" height="100%">
+                <RadialBarChart
+                  data={ring}
+                  innerRadius="72%"
+                  outerRadius="100%"
+                  startAngle={90}
+                  endAngle={-270}
+                  barSize={14}
+                >
+                  <RadialBar background={{ fill: 'var(--bg-surface-2)' }} dataKey="value" cornerRadius={7} />
+                  <Tooltip content={<ChartTip />} />
+                </RadialBarChart>
+              </ResponsiveContainer>
+              <div className="ring-center">
+                <strong>{pct}</strong>
+                <span>%</span>
+              </div>
+            </div>
+            <div className="hero-meta">
+              <div className="big-line">
+                <span className="n">{done.length}</span> 已完成 ·
+                <span className="n">{total - done.length}</span> 尚未结束
+              </div>
+              {/* 分布条：七状态分段 */}
+              <div className="fb-dash-bar" role="img" aria-label={`完成度 ${pct}%`}>
+                {total === 0 ? (
+                  <span className="empty-track" />
+                ) : (
+                  STATUS_ORDER.concat('canceled').map((s) => {
+                    const n = byStatus.get(s)?.length ?? 0;
+                    if (n === 0) return null;
+                    return (
+                      <button
+                        key={s}
+                        className="seg"
+                        style={{ background: STATUS_HEX[s], flexGrow: n }}
+                        title={`${STATUS_LABEL[s]} ${n}`}
+                        onClick={() => onGotoColumn(s)}
+                      />
+                    );
+                  })
+                )}
+              </div>
+              <div className="fb-dash-legend">
+                {STATUS_ORDER.concat('canceled')
+                  .filter((s) => (byStatus.get(s)?.length ?? 0) > 0)
+                  .map((s) => (
+                    <button key={s} className="lg" onClick={() => onGotoColumn(s)} title={`查看 ${STATUS_LABEL[s]}列`}>
+                      <span className="dot" style={{ background: STATUS_HEX[s] }} />
+                      {STATUS_LABEL[s]} {byStatus.get(s)!.length}
+                    </button>
+                  ))}
+              </div>
+            </div>
+          </div>
+        </section>
 
+        {/* ---- 近 7 天趋势：双序列面积图 ---- */}
+        <section className="fb-dash-card fb-dash-trend">
+          <div className="card-hd">近 7 天动态</div>
+          <div className="trend-chart">
+            <ResponsiveContainer width="100%" height="100%">
+              <AreaChart data={trend} margin={{ top: 8, right: 4, bottom: 0, left: -22 }}>
+                <defs>
+                  <linearGradient id="g-create" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#6e8bff" stopOpacity={0.35} />
+                    <stop offset="100%" stopColor="#6e8bff" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="g-done" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#3fb877" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="#3fb877" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <XAxis
+                  dataKey="day"
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 10, fill: 'var(--text-weak)' }}
+                  interval="preserveStartEnd"
+                />
+                <YAxis
+                  allowDecimals={false}
+                  tickLine={false}
+                  axisLine={false}
+                  tick={{ fontSize: 10, fill: 'var(--text-weak)' }}
+                  width={36}
+                />
+                <Tooltip content={<ChartTip />} cursor={{ stroke: 'var(--border-subtle)' }} />
+                <Area type="monotone" dataKey="创建" stroke="#6e8bff" strokeWidth={2} fill="url(#g-create)" />
+                <Area type="monotone" dataKey="完成" stroke="#3fb877" strokeWidth={2} fill="url(#g-done)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+          <div className="trend-cap">
+            <span className="cap-item"><span className="dot" style={{ background: '#6e8bff' }} />创建 {trend.reduce((n, d) => n + d.创建, 0)}</span>
+            <span className="cap-item"><span className="dot" style={{ background: '#3fb877' }} />完成 {trend.reduce((n, d) => n + d.完成, 0)}</span>
+          </div>
+        </section>
+      </div>
+
+      {/* ---- 第二行：关注 / 人机 / 优先级（auto-fit 动态列） ---- */}
       <div className="fb-dash-grid">
-        {/* ---- 需要关注 ---- */}
         <section className="fb-dash-card">
           <div className="card-hd">需要关注</div>
           <div className="fb-dash-stats">
@@ -137,7 +233,6 @@ export default function DashboardView({ onGotoColumn }: { onGotoColumn: (status:
               <span className="l">阻塞</span>
             </button>
           </div>
-          {/* 即将到期清单（3 天内 + 逾期） */}
           {upcoming.length > 0 && (
             <div className="fb-dash-list">
               {upcoming.map((t) => {
@@ -155,24 +250,6 @@ export default function DashboardView({ onGotoColumn }: { onGotoColumn: (status:
           {total === 0 && <div className="fb-dash-none">还没有任务——点右上「新建」开始</div>}
         </section>
 
-        {/* ---- 近 7 天创建趋势 ---- */}
-        <section className="fb-dash-card">
-          <div className="card-hd">近 7 天创建</div>
-          <div className="fb-dash-chart" role="img" aria-label="最近七天创建任务数">
-            {days.map((d) => (
-              <div key={d.label} className="col" title={`${d.label}：${d.count} 个`}>
-                <span className="bar" style={{ height: `${(d.count / maxCount) * 100}%` }} />
-                <span className="n">{d.count > 0 ? d.count : ''}</span>
-                <span className="l">{d.label}</span>
-              </div>
-            ))}
-          </div>
-          <div className="fb-dash-foot">
-            共 {days.reduce((n, d) => n + d.count, 0)} 个新任务
-          </div>
-        </section>
-
-        {/* ---- 人机分布（产品定位信号） ---- */}
         <section className="fb-dash-card">
           <div className="card-hd">人机协作</div>
           <div className="fb-dash-ratio">
@@ -182,22 +259,21 @@ export default function DashboardView({ onGotoColumn }: { onGotoColumn: (status:
             </div>
             <div className="cap">
               <span className="cap-item">
-                <span className="ag">AG</span> AI 创建 {agent.length}
+                <span className="ag">AG</span> AI 创建 {agent.length}（{total ? Math.round((agent.length / total) * 100) : 0}%）
               </span>
-              <span className="cap-item">用户创建 {total - agent.length}</span>
+              <span className="cap-item">用户 {total - agent.length}</span>
             </div>
           </div>
-          {/* 优先级速览 */}
           <div className="fb-dash-pri">
             {(['urgent', 'high', 'medium', 'low'] as const)
-              .map((p) => ({ p, n: live.filter((t) => t.priority === p).length }))
+              .map((p) => ({ p, n: model.live.filter((t) => t.priority === p).length }))
               .filter((x) => x.n > 0)
               .map(({ p, n }) => (
                 <button key={p} className={`pri-chip pri-${p}`} onClick={() => onGotoColumn('')}>
                   {PRI_LABEL[p]} {n}
                 </button>
               ))}
-            {live.every((t) => t.priority === 'none') && <span className="fb-dash-none">未设置优先级</span>}
+            {model.live.every((t) => t.priority === 'none') && <span className="fb-dash-none">未设置优先级</span>}
           </div>
         </section>
       </div>
