@@ -1,21 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
-  <!-- Vibe-TaskDeck 应用图标：任务板 + 状态点
-       语言与挂件 UI 同源——圆角方板（列容器）、横线（任务条）、
-       右下点亮状态点（胶囊状态点语义：活跃/进行中）。
-       底板 brand-600 深蓝紫，元素白色，托盘 16px 缩到细节不糊。 -->
-  <defs>
-    <linearGradient id="board" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#6e8bff"/>
-      <stop offset="1" stop-color="#4a63d6"/>
-    </linearGradient>
-  </defs>
-  <!-- 底板：圆角方（与窗口/列容器同语言，radius-lg 比例） -->
-  <rect x="8" y="8" width="112" height="112" rx="28" fill="url(#board)"/>
-  <!-- 三条任务线：长短递减（列表语义），首条已完成打勾 -->
-  <path d="M36 46 h56" stroke="#fff" stroke-width="10" stroke-linecap="round" opacity=".55"/>
-  <path d="M36 70 h40" stroke="#fff" stroke-width="10" stroke-linecap="round" opacity=".85"/>
-  <path d="M36 94 h28" stroke="#fff" stroke-width="10" stroke-linecap="round" opacity=".55"/>
-  <!-- 状态点：右下角点亮（胶囊「进行中」语义，实心白点+光晕） -->
-  <circle cx="98" cy="94" r="9" fill="#fff"/>
-  <circle cx="98" cy="94" r="15" fill="#fff" opacity=".25"/>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Vibe-TaskDeck 应用图标 · 方向 A2（白底看板列）
+       规范依据（Windows 11 app icon guidelines）：
+       · 画布 1024，内容区 8..1016（系统安全边，小尺寸缩放不裁切）
+       · 圆角 216/1024 ≈ 21%（Win11 曲率；256px 档为 54/256）
+       · 底板 #F7F8FA + 描边 #D5D9E2（1024 下 3px，随尺寸等比缩减）
+       · 三柱 brand-500/400/600（主/亮/深）——看板三列隐喻，
+         白底上用独立色深分层（透明度在白底会显脏）
+       · 顶部 5% 白高光带：材质感（≥128px 可感知，小尺寸自然不可见）
+       · 16px 独立双柱变体由托盘图标单独提供（tray 系列），不进 ico -->
+  <rect x="8" y="8" width="1008" height="1008" rx="216" fill="#F7F8FA"/>
+  <rect x="9.5" y="9.5" width="1005" height="1005" rx="214.5" stroke="#D5D9E2" stroke-width="3"/>
+  <clipPath id="hd"><rect x="8" y="8" width="1008" height="420" rx="216"/></clipPath>
+  <rect x="8" y="8" width="1008" height="420" fill="#FFFFFF" opacity=".5" clip-path="url(#hd)"/>
+  <rect x="240" y="232" width="152" height="560" rx="48" fill="#6E8BFF"/>
+  <rect x="436" y="232" width="152" height="384" rx="48" fill="#8FA2FF"/>
+  <rect x="632" y="232" width="152" height="472" rx="48" fill="#4A63D6"/>
 </svg>
