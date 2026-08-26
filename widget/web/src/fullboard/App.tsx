@@ -132,9 +132,10 @@ export default function App() {
       >
         <div className="fb-brand">
           <div className="mark">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="4" y="5" width="16" height="16" rx="3" />
-              <path d="M8 9h8M8 13h8M8 17h5" />
+            {/* 应用图标 A2 同构（22px 线框版）：圆角方板 + 三柱（板与柱等线宽） */}
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" />
+              <path d="M8.5 8v8M12 8v5M15.5 8v6.5" />
             </svg>
           </div>
           <div className="tt">任务看板</div>
