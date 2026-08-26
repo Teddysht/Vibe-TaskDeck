@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 /**
- * taskctl 本地模式：绕过 HTTP 服务，直连 SQLite（复用 upstream 的 TaskboardDatabase）。
+ * taskctl 本地模式：绕过 HTTP 服务，直连 SQLite（自研数据层 cli/database.mjs，
+ * DDL/PRAGMA/乐观锁语义与挂件 Rust 层 widget/src-tauri/src/db.rs 逐字对齐）。
  *
  * 输出契约与 upstream/cli/taskctl.mjs 完全一致：
  *   · 成功：stdout 一行 JSON { ...result, schemaVersion: 2 }
@@ -12,7 +13,7 @@
  * （taskboard.py 会显式设置该变量指向 <repo>/.data，与挂件同库互通）
  *
  * 支持子集：project list/create、issue list/get/create/update/move/archive/restore、
- * comment list/add/update/delete、context current。
+ * comment list/add/update/delete、activity list、context current。
  * 不支持（纯客户端模式无 server）：cloud、project map、issue relation、attachment
  * （relation/attachment 可经挂件全版看板详情面板操作）。
  */
@@ -22,13 +23,13 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { TaskboardDatabase, ApiError } from "../upstream/server/database.mjs";
+import { TaskboardDatabase, ApiError } from "./database.mjs";
 import {
   DEFAULT_PROJECT_ID,
   TASK_STATUSES,
   isTaskPriority,
   isTaskStatus,
-} from "../upstream/shared/domain.mjs";
+} from "./domain.mjs";
 
 export const SCHEMA_VERSION = 2;
 
@@ -39,7 +40,7 @@ const GLOBAL_OPTIONS = new Set(["runtime-file"]);
 const COMMAND_OPTIONS = new Map([
   ["project list", new Set(["json"])],
   ["project create", new Set(["id", "name", "workspace-path", "json"])],
-  ["issue list", new Set(["project", "status", "archived", "json"])],
+  ["issue list", new Set(["project", "status", "archived", "thread-id", "updated-since", "json"])],
   ["issue get", new Set(["json"])],
   [
     "issue create",
@@ -102,6 +103,8 @@ const COMMAND_OPTIONS = new Map([
   ["comment add", new Set(["body", "thread-id", "json"])],
   ["comment update", new Set(["body", "thread-id", "if-version", "json"])],
   ["comment delete", new Set(["thread-id", "if-version", "json"])],
+  // AI 回执闭环：读活动流（按会话归属聚合，since-id 为活动 id 游标）
+  ["activity list", new Set(["thread-id", "since-id", "json"])],
   ["context current", new Set(["cwd", "json"])],
 ]);
 
@@ -116,13 +119,23 @@ const UNSUPPORTED_COMMANDS = new Set([
   "attachment upload",
 ]);
 
-// 与 HTTP 模式 x-taskboard-client: taskctl 头的 actor 效果一致（app.mjs CODEX_AGENT_ACTOR）
-const CODEX_AGENT_ACTOR = {
-  type: "agent",
-  id: "codex-agent",
-  name: "Codex Agent",
-  avatarUrl: null,
-};
+/* ==== agent 身份解析（多 AI 区分）====
+ * 默认与 HTTP 模式 x-taskboard-client: taskctl 头的 actor 一致（app.mjs CODEX_AGENT_ACTOR）；
+ * 可用环境变量覆盖，让多个 AI 客户端在同一看板中区分彼此的写操作：
+ *   VIBE_TASKDECK_ACTOR_ID   —— actor id（默认 codex-agent，保证旧行为不变）
+ *   VIBE_TASKDECK_ACTOR_NAME —— 显示名（默认 Codex Agent；仅覆盖 ID 未覆盖 NAME 时回退为该 ID）
+ */
+const DEFAULT_ACTOR_ID = "codex-agent";
+const DEFAULT_ACTOR_NAME = "Codex Agent";
+
+function resolveActor(overrides) {
+  const env = overrides.env ?? process.env;
+  const rawId = env.VIBE_TASKDECK_ACTOR_ID?.trim();
+  const id = rawId || DEFAULT_ACTOR_ID;
+  const rawName = env.VIBE_TASKDECK_ACTOR_NAME?.trim();
+  const name = rawName || (rawId ? id : DEFAULT_ACTOR_NAME);
+  return { type: "agent", id, name, avatarUrl: null };
+}
 
 const PROJECT_ID_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/;
 
@@ -232,7 +245,7 @@ function execute(parsed, overrides) {
   const allowedOptions = COMMAND_OPTIONS.get(command);
   if (!allowedOptions) {
     throw usageError(
-      "Expected one of: project list/create, issue list/get/create/update/move/archive/restore, comment list/add/update/delete, context current",
+      "Expected one of: project list/create, issue list/get/create/update/move/archive/restore, comment list/add/update/delete, activity list, context current",
     );
   }
   validateOptions(parsed.options, allowedOptions);
@@ -280,6 +293,9 @@ function execute(parsed, overrides) {
       case "comment delete":
         expectOperandCount(parsed, 1);
         return commentDelete(db, parsed.operands[0], parsed.options, overrides);
+      case "activity list":
+        expectOperandCount(parsed, 0);
+        return activityList(db, parsed.options);
       case "context current":
         expectOperandCount(parsed, 0);
         return currentContext(db, parsed.options, overrides);
@@ -344,6 +360,9 @@ function issueList(db, options) {
   if (options.archived !== undefined && !["true", "false", "all"].includes(options.archived)) {
     throw usageError("--archived must be true, false, or all");
   }
+  const updatedSince = options["updated-since"] === undefined
+    ? undefined
+    : assertIsoTimestamp(options["updated-since"], "--updated-since");
   // 对齐路由默认值：未传 --archived 时只看未归档任务（app.mjs parseTaskFilters）
   const archived = options.archived ?? "false";
   return {
@@ -351,7 +370,23 @@ function issueList(db, options) {
       projectId: options.project,
       status: options.status,
       archived: archived === "all" ? undefined : archived,
+      threadId: options["thread-id"],
+      updatedSince,
     }),
+  };
+}
+
+/** 活动流读取（AI 回执闭环）：按 --thread-id 聚合会话名下任务的人机双方变更 */
+function activityList(db, options) {
+  const sinceId = options["since-id"];
+  if (sinceId !== undefined && sinceId.trim().length === 0) {
+    throw usageError("--since-id cannot be empty");
+  }
+  const activities = db.listActivityFeed(options["thread-id"], sinceId);
+  // nextSinceId：下次轮询的游标（末条活动 id；空流沿用传入游标）
+  return {
+    activities,
+    nextSinceId: activities.length > 0 ? activities[activities.length - 1].id : (sinceId ?? null),
   };
 }
 
@@ -382,6 +417,7 @@ function issueCreate(db, options, overrides) {
     throw apiError(400, "INVALID_FIELD", "A recurring issue requires a due date");
   }
   const threadId = resolveThreadId(options, overrides);
+  const actor = resolveActor(overrides);
   return {
     task: db.createTask({
       projectId,
@@ -397,8 +433,8 @@ function issueCreate(db, options, overrides) {
       startDate: options["start-date"] ?? null,
       dueDate: options["due-date"] ?? null,
       recurrence: recurrence ?? null,
-      actor: CODEX_AGENT_ACTOR,
-      assignee: CODEX_AGENT_ACTOR,
+      actor,
+      assignee: actor,
     }),
   };
 }
@@ -435,7 +471,7 @@ function issueUpdate(db, taskId, options, overrides) {
   }
   const id = requireIssueId(taskId);
   const version = resolveVersion(db, id, options["if-version"]);
-  return { task: db.updateTask(id, version, changes, threadId, undefined, CODEX_AGENT_ACTOR) };
+  return { task: db.updateTask(id, version, changes, threadId, undefined, resolveActor(overrides)) };
 }
 
 function issueMove(db, taskId, options, overrides) {
@@ -444,7 +480,7 @@ function issueMove(db, taskId, options, overrides) {
   const threadId = resolveThreadId(options, overrides);
   const id = requireIssueId(taskId);
   const version = resolveVersion(db, id, options["if-version"]);
-  return { task: db.moveTask(id, version, status, undefined, threadId, undefined, CODEX_AGENT_ACTOR) };
+  return { task: db.moveTask(id, version, status, undefined, threadId, undefined, resolveActor(overrides)) };
 }
 
 function issueArchive(db, taskId, options, overrides, action) {
@@ -452,8 +488,8 @@ function issueArchive(db, taskId, options, overrides, action) {
   const id = requireIssueId(taskId);
   const version = resolveVersion(db, id, options["if-version"]);
   const task = action === "archive"
-    ? db.archiveTask(id, version, threadId, undefined, CODEX_AGENT_ACTOR)
-    : db.restoreTask(id, version, threadId, undefined, CODEX_AGENT_ACTOR);
+    ? db.archiveTask(id, version, threadId, undefined, resolveActor(overrides))
+    : db.restoreTask(id, version, threadId, undefined, resolveActor(overrides));
   return { task };
 }
 
@@ -463,7 +499,7 @@ function commentAdd(db, taskId, options, overrides) {
     comment: db.createComment(requireIssueId(taskId), {
       body: requiredOption(options, "body"),
       threadId,
-      actor: CODEX_AGENT_ACTOR,
+      actor: resolveActor(overrides),
     }),
   };
 }
@@ -643,6 +679,16 @@ function assertStatus(status) {
   if (!isTaskStatus(status)) {
     throw usageError(`Invalid status: ${status}. Expected one of: ${TASK_STATUSES.join(", ")}`);
   }
+}
+
+/** ISO 8601 时间戳校验：日期或完整时刻均可（与库内 updated_at 做字符串比较） */
+function assertIsoTimestamp(value, optionName) {
+  if (!/^\d{4}-\d{2}-\d{2}([T ].*)?$/.test(value) || Number.isNaN(Date.parse(value))) {
+    throw usageError(
+      `${optionName} must be an ISO 8601 timestamp (e.g. 2026-08-26T10:00:00Z or 2026-08-26)`,
+    );
+  }
+  return value;
 }
 
 function assertPriority(priority) {

@@ -64,7 +64,16 @@ cd src-tauri; cargo build --release --target x86_64-pc-windows-msvc
 
 ## 核心工作流（Mana 侧）
 
-1. 对已有任务，先 `issue get` + `comment list` 读描述与最新评论，再决定是否开工；评论可能包含返回的补充要求。
+1. **冷启动恢复上下文**：会话开始（或隔段时间回来）时，先跑下面两条读命令即可知道「我名下有什么、别人改了什么」，再决定是否开工。`activity list` 看会话内人机双方的变更流（含人类在挂件里的改动回执），`issue list --updated-since` 看指定时刻之后被动过的任务：
+
+   ```powershell
+   # 本会话（thread-id 见下方约定）名下全部任务 + 人机双方变更回执
+   taskctl activity list --thread-id <my-thread> --json
+   # 例：上次离开时刻之后有变动的任务（ISO 8601 时间戳）
+   taskctl issue list --thread-id <my-thread> --updated-since 2026-08-26T09:00:00Z --json
+   ```
+
+   轮询增量用 `activity list --since-id <上次返回的 nextSinceId>`。之后对要开工的任务再 `issue get` + `comment list` 读描述与最新评论（评论可能包含返回的补充要求）。
 2. `backlog` 未获用户授权不得开工。`todo` 可认领时，先用其当前 `version` 执行 `issue move --status in_progress --if-version <version>`，成功后再动手；已 `in_progress` 且绑定当前会话的才可继续。不接管其他会话认领的任务。
 3. 完成后加评论说明改动与验证结果，再 `issue move --status in_review`。
 4. 仅当用户明确接受后才 `issue move --status done`；无法继续用 `blocked`，不再继续用 `canceled`。
@@ -80,8 +89,12 @@ taskctl context current [--cwd PATH]
 taskctl project list / create
 
 # 读任务
-taskctl issue list [--project ID] [--status S] [--archived true|false|all]
+taskctl issue list [--project ID] [--status S] [--archived true|false|all] \
+  [--thread-id ID] [--updated-since ISO8601]
 taskctl issue get ID
+
+# 活动流（AI 回执闭环：按会话归属聚合人机双方变更；--since-id 为增量游标）
+taskctl activity list [--thread-id ID] [--since-id ACTIVITY_ID]
 
 # 建任务
 taskctl issue create --project ID --title TITLE [--description TEXT] \
@@ -106,7 +119,18 @@ taskctl comment delete COMMENT_ID --if-version N
 
 ## thread-id 约定
 
-taskctl 的写操作要求归属到一个会话。Mana 场景没有 `CODEX_THREAD_ID` 环境变量，因此每次写操作都要显式传 `--thread-id`。约定：同一个 Mana 频道/会话始终使用同一个稳定标识（例如频道名或固定 id），这样看板能把任务绑定到该会话，后续 `issue get` 也能按 `threadId` 识别归属。读操作不要求 thread-id。挂件自身的写操作固定使用 `taskboard-widget`。
+taskctl 的写操作要求归属到一个会话。Mana 场景没有 `CODEX_THREAD_ID` 环境变量，因此每次写操作都要显式传 `--thread-id`。约定：同一个 Mana 频道/会话始终使用同一个稳定标识（例如频道名或固定 id），这样看板能把任务绑定到该会话，后续 `issue get` 与 `issue list --thread-id` / `activity list --thread-id` 也能按 `threadId` 圈定自己名下的任务与变更流。读操作不要求 thread-id。挂件自身的写操作固定使用 `taskboard-widget`。
+
+## AI 身份可配（多 AI 区分）
+
+taskctl 的写操作默认以 `codex-agent` 身份落库（creator/assignee/activity actor）。多个 AI 客户端共用同一看板时，可用环境变量区分身份，活动流与任务详情里即可一眼分清是谁写的：
+
+```powershell
+$env:VIBE_TASKDECK_ACTOR_ID = "my-agent"        # actor id（默认 codex-agent）
+$env:VIBE_TASKDECK_ACTOR_NAME = "我的助手"       # 显示名（默认 Codex Agent；只设 ID 时回退为该 ID）
+```
+
+只影响后续写操作（建卡/更新/流转/归档/评论），不回溯已有记录；不设置时行为与旧版完全一致。
 
 ## 清理边界
 
