@@ -88,8 +88,9 @@
 .large.leaving{opacity:0;transform:translateY(-4px) scale(.99);
   transition:opacity 120ms var(--ease-out),transform 120ms var(--ease-out)}
 .large .hd{display:flex;align-items:center;gap:10px;padding:13px 14px;border-bottom:1px solid var(--border-subtle);-webkit-app-region:drag}
-.large .hd .mark{width:24px;height:24px;border-radius:var(--radius-sm);background:var(--bg-surface-2);flex:0 0 auto;display:flex;align-items:center;justify-content:center}
-.large .hd .mark svg{width:13px;height:13px;color:var(--text-secondary)}
+/* mark=应用图标本体（无容器底，svg 自带白底板），28px 撑起视觉重量 */
+.large .hd .mark{width:28px;height:28px;flex:0 0 auto;display:flex;align-items:center;justify-content:center}
+.large .hd .mark svg{width:28px;height:28px;display:block}
 .large .hd .tt{font-size:var(--font-md);font-weight:600;line-height:1.2}
 .large .hd .sub{font-size:var(--font-sm);color:var(--text-weak);line-height:1.4}
 .large .hd .sp{flex:1}
