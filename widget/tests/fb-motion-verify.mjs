@@ -109,6 +109,12 @@ async function main() {
 
   await send('Runtime.enable');
   await send('Page.enable');
+  // 动效断言前提：强制 prefers-reduced-motion=no-preference——部分无头
+  // Chrome（如 GitHub runner）默认 reduce，会让所有动画走降级路径
+  // （fb-*-reduced/transition 仅 opacity），动效断言全部假阴性
+  await send('Emulation.setEmulatedMedia', {
+    features: [{ name: 'prefers-reduced-motion', value: 'no-preference' }],
+  });
   await send('Page.addScriptToEvaluateOnNewDocument', { source: MOCK_JS });
   await send('Page.navigate', { url: PAGE_URL });
   await sleep(1500);
