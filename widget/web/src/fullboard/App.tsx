@@ -4,6 +4,7 @@
  * ============================================================ */
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '../lib/tauri';
+import BrandMark from '../assets/brand-mark';
 import { loadBoardData, markOffline } from './api';
 import { useBoardEvents, useBoardPolling } from './hooks/useBoardEvents';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
@@ -131,13 +132,7 @@ export default function App() {
         onDoubleClick={toggleMaximize}
       >
         <div className="fb-brand">
-          <div className="mark">
-            {/* 应用图标 A2 同构（22px 线框版）：圆角方板 + 三柱（板与柱等线宽） */}
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3.5" y="3.5" width="17" height="17" rx="4.5" />
-              <path d="M8.5 8v8M12 8v5M15.5 8v6.5" />
-            </svg>
-          </div>
+          <div className="mark"><BrandMark /></div>
           <div className="tt">任务看板</div>
         </div>
         <div className="fb-viewtoggle">
