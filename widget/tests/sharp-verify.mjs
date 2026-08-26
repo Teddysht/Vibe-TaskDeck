@@ -8,8 +8,9 @@ import { spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const ROOT = 'D:/git/taskboard-skill/widget/dist';
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
 const PORT = 8477;
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const DEBUG_PORT = 8487;

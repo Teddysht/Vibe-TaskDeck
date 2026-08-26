@@ -1,0 +1,80 @@
+# ==== 信任基建 CI：CLI 契约冒烟 + 挂件 mock 层回归（Windows 单栈）====
+#
+# 两个 job 相互独立，任一失败即红：
+#   cli-test    —— taskctl 语法门禁 + 参数解析/运行时契约冒烟 + taskboard.py 编译门禁
+#   widget-mock —— 前端构建 + 无头 Chrome mock 层 11 套件（真实层套件需挂件 CDP，CI 不跑）
+#
+# 注意：mock 层测试默认 CHROME_PATH 为本机 Chrome 路径，runner 上需先探测
+# GitHub 镜像自带 Chrome 并导出 CHROME_PATH 环境变量。
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  cli-test:
+    name: CLI 契约冒烟（taskctl + taskboard.py）
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: taskboard.py 语法门禁
+        run: python -m py_compile skill/taskboard.py
+
+      - name: taskctl 契约冒烟
+        run: node widget/tests/cli-smoke.mjs
+
+  widget-mock:
+    name: 挂件构建 + mock 层回归
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # runner 镜像自带 Chrome（路径与本地默认值不同），探测后写入 CHROME_PATH
+      # 供 widget/tests/*.mjs 读取；两处候选均缺失时再兜底查 PATH
+      - name: 探测 Chrome 并导出 CHROME_PATH
+        shell: pwsh
+        run: |
+          $candidates = @(
+            'C:\Program Files\Google\Chrome\Application\chrome.exe',
+            'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe'
+          )
+          $chrome = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+          if (-not $chrome) {
+            $chrome = (Get-Command chrome -ErrorAction SilentlyContinue).Source
+          }
+          if (-not $chrome) { Write-Error 'runner 上未找到 Chrome，无法跑 mock 层'; exit 1 }
+          Write-Host "CHROME_PATH=$chrome"
+          "CHROME_PATH=$chrome" | Out-File -Append -Encoding utf8 $env:GITHUB_ENV
+
+      - name: 安装依赖并构建
+        run: |
+          cd widget
+          npm ci
+          npm run build
+
+      - name: mock 层回归（11 套件）
+        run: |
+          cd widget
+          node tests/run-all.mjs

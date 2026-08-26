@@ -32,3 +32,6 @@ widget/tests/.out/
 
 # widget 前端依赖（Vite 迁移）
 widget/node_modules/
+
+# 测试产物目录（e2e 截图/临时 profile）
+widget/.out/

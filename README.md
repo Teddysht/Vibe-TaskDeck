@@ -75,6 +75,8 @@ python skill/taskboard.py taskctl issue create --project local --title "我的�
 
 看到一段 JSON 输出、里面有任务编号（`LOCAL-1` 这样的格式）就成功了。
 
+> 📦 **数据层自研，克隆即可用**：`taskctl` 的数据层是仓库内自研实现（`cli/database.mjs`，基于 Node 24 内置的 node:sqlite），与桌面挂件共用同一个 SQLite 文件——不需要安装数据库软件，也不依赖任何外部代码快照或后台服务。
+
 ### 第 3 步：构建并启动桌面挂件
 
 ```powershell

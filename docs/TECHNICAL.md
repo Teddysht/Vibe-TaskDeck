@@ -169,5 +169,5 @@ cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
 
 ## 已知技术债
 
-- `cli/taskctl-local.mjs` 依赖本地 `upstream/`（不入库）的 `TaskboardDatabase`——独立仓库使用时需自行放置，待重写为 Rust 同语义层。
+- ~~`cli/taskctl-local.mjs` 依赖本地 `upstream/`（不入库）的 `TaskboardDatabase`~~ 已清偿（2026-08-26）：数据层自研为 `cli/database.mjs` + `cli/domain.mjs`（node:sqlite，DDL/PRAGMA/乐观锁/活动流语义对齐 `widget/src-tauri/src/db.rs`），克隆即可用；`upstream/` 仅保留本地语义参考用途。
 - taskctl 本地模式不支持 cloud / project map / relation / attachment（关联与附件经挂件全版看板操作）。
