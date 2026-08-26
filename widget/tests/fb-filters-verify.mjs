@@ -282,7 +282,8 @@ async function main() {
   await sleep(1500);
   ws.close();
   server.close();
+  chrome.kill(); // 兜底：Browser.close 失败时防 chrome 残留占调试口/profile（下次同 profile 拉起会被单实例转发静默废掉）
 }
 
-main().then(() => { setTimeout(() => process.exit(results.some(r => !r.pass) ? 2 : 0), 2500); })
-  .catch((e) => { console.error('FATAL', e); server.close(); process.exit(1); });
+main().then(() => { setTimeout(() => { try { chrome.kill(); } catch {} ; process.exit(results.some(r => !r.pass) ? 2 : 0); }, 2500); })
+  .catch((e) => { console.error('FATAL', e); server.close(); try { chrome.kill(); } catch {}; process.exit(1); });

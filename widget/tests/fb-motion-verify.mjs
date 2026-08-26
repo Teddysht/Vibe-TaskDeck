@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../dist');
 const PORT = 8482;
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const DEBUG_PORT = 8499;
+const DEBUG_PORT = 8501; // 不与其他套件共用：残留 chrome 占口 + profile 单实例转发会让后续套件静默起不来调试口
 const PROFILE = path.resolve('.out', 'profile-fbmotion');
 const PAGE_URL = `http://localhost:${PORT}/fullboard.html`;
 const OUT = path.resolve('.out', 'fb-motion-verify-result.json');
@@ -328,7 +328,8 @@ async function main() {
   await sleep(1500);
   ws.close();
   server.close();
+  chrome.kill(); // 兜底：防残留 chrome 占调试口/profile（曾致 fb-filters 假阴性）
 }
 
-main().then(() => { setTimeout(() => process.exit(results.some(r => !r.pass) ? 2 : 0), 2500); })
-  .catch((e) => { console.error('FATAL', e); server.close(); process.exit(1); });
+main().then(() => { setTimeout(() => { try { chrome.kill(); } catch {} ; process.exit(results.some(r => !r.pass) ? 2 : 0); }, 2500); })
+  .catch((e) => { console.error('FATAL', e); server.close(); try { chrome.kill(); } catch {}; process.exit(1); });
