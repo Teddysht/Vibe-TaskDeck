@@ -32,6 +32,7 @@ const MOCK_SUITE = [
   { file: 'fb-detail-verify.mjs',   name: 'FB 详情面板（编辑/Markdown/评论/活动流）' },
   { file: 'fb-filters-verify.mjs',  name: 'FB 筛选+URL 同步+undo 栈' },
   { file: 'fb-archive-verify.mjs',  name: 'FB 归档面板+右键菜单+标签编辑' },
+  { file: 'fb-motion-verify.mjs',   name: 'FB 动效（Tab 滑动/视图过渡/抽屉可中断/跨列 FLIP）' },
 ];
 
 const REAL_SUITE = [

@@ -131,7 +131,8 @@ async function main() {
   })()`);
   check('P2-1f closeBtn 与收起键间距 6px', close.ml === '6px', `marginLeft=${close.ml}`);
   check('P2-1g closeBtn hover 红色警示规则存在', close.hoverRule === true);
-  check('P2-1h closeBtn title 含「关闭窗口」警示语', close.title.includes('关闭窗口'), `title="${close.title}"`);
+  // fb70500 起 close 语义改为「隐藏挂件驻留托盘」（非直接关窗）——断言跟随产品
+  check('P2-1h closeBtn title 说明隐藏驻留托盘语义', close.title.includes('隐藏挂件') && close.title.includes('托盘'), `title="${close.title}"`);
 
   // board 态截图（看板图标场景）
   await evalJs(`document.getElementById('viewToggle').click(); 'ok'`);

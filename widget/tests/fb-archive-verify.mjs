@@ -14,7 +14,7 @@ const PORT = 8482;
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const DEBUG_PORT = 8500;
 const PROFILE = path.resolve('.out', 'profile-fbarch');
-const PAGE_URL = `http://localhost:${PORT}/fullboard.html`;
+const PAGE_URL = `http://localhost:${PORT}/fullboard.html?view=board`; // ?view=board：仪表盘现为默认视图，看板类断言需显式入口
 const OUT = path.resolve('.out', 'fb-archive-verify-result.json');
 
 const MOCK_JS = `
@@ -135,17 +135,18 @@ async function main() {
   const archived = await evalJs(`(() => ({
     cards: document.querySelectorAll('.fb-card').length,
     archived: !!window.__TASKS__.find(t => t.id === 'T-1')?.archivedAt,
-    toggleText: document.querySelector('.fb-other-toggle')?.textContent.trim(),
+    // 归档入口现为顶栏按钮 + 徽标计数（原常驻侧栏 toggle 已移除）
+    badge: document.querySelector('.fb-archivecount')?.textContent.trim() ?? null,
   }))()`);
   check('FB-A1b 归档后移出看板（剩 1 卡）', archived.cards === 1, `cards=${archived.cards}`);
-  check('FB-A1c 归档面板计数为 1', archived.toggleText?.includes('1') === true, `text="${archived.toggleText}"`);
+  check('FB-A1c 归档入口徽标计数为 1', archived.badge === '1', `badge="${archived.badge}"`);
 
   // ---- FB-A2 恢复 ----
-  await evalJs(`document.querySelector('.fb-other-toggle').click(); 'ok'`);
+  await evalJs(`document.querySelector('.fb-archivebtn').click(); 'ok'`);
   await sleep(300);
-  const panelRows = await evalJs(`document.querySelectorAll('.fb-other-item').length`);
-  check('FB-A2a 面板展开显示归档任务', panelRows === 1, `rows=${panelRows}`);
-  await evalJs(`document.querySelector('.fb-other-item button').click(); 'ok'`);
+  const panelRows = await evalJs(`document.querySelectorAll('.fb-archive-item').length`);
+  check('FB-A2a 归档 Sheet 展开显示归档任务', panelRows === 1, `rows=${panelRows}`);
+  await evalJs(`document.querySelector('.fb-archive-item .act.restore').click(); 'ok'`);
   await sleep(600);
   const restored = await evalJs(`(() => ({
     cards: document.querySelectorAll('.fb-card').length,
@@ -165,18 +166,20 @@ async function main() {
   await sleep(500);
   // confirm 拦截（自动确认）
   await evalJs(`window.confirm = () => true; 'ok'`);
-  await evalJs(`document.querySelector('.fb-other-item button.danger')?.click(); 'del'`);
+  await evalJs(`document.querySelector('.fb-archive-item .act.danger')?.click(); 'del'`);
   await sleep(600);
   const deleted = await evalJs(`(() => ({
     remaining: window.__TASKS__.length,
-    toggleText: document.querySelector('.fb-other-toggle')?.textContent.trim(),
+    badge: document.querySelector('.fb-archivecount')?.textContent.trim() ?? null,
   }))()`);
-  check('FB-A3 永久删除成功（库剩 1 条）', deleted.remaining === 1 && !deleted.toggleText.includes('1'), JSON.stringify(deleted));
+  check('FB-A3 永久删除成功（库剩 1 条）', deleted.remaining === 1 && deleted.badge === null, JSON.stringify(deleted));
 
   // ---- FB-A4 标签编辑 ----
   await evalJs(`document.querySelector('[data-task-id="T-2"]').click(); 'ok'`);
   await sleep(600);
-  await evalJs(`document.querySelector('.d-label-add')?.click(); 'ok'`);
+  // 标签入口现为「标签」小节的「编辑」按钮（原 .d-label-add 已移除；
+  // 描述小节也有同名按钮，须按小节标题精确定位）
+  await evalJs(`(() => { const sec = [...document.querySelectorAll('.d-sec')].find(s => s.textContent.startsWith('标签')); const b = sec?.querySelector('.d-sec-btn'); if (b) b.click(); return b ? 'ok' : 'missing'; })()`);
   await sleep(300);
   const menuOpen = await evalJs(`!!document.querySelector('.d-label-menu')`);
   check('FB-A4a 标签菜单打开', menuOpen === true);

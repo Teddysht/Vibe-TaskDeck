@@ -16,7 +16,7 @@ const PORT = 8480;
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const DEBUG_PORT = 8498;
 const PROFILE = path.resolve('.out', 'profile-fbdetail');
-const PAGE_URL = `http://localhost:${PORT}/fullboard.html`;
+const PAGE_URL = `http://localhost:${PORT}/fullboard.html?view=board`; // ?view=board：仪表盘现为默认视图，看板类断言需显式入口
 const OUT = path.resolve('.out', 'fb-detail-verify-result.json');
 
 const MOCK_JS = `
@@ -147,10 +147,20 @@ async function main() {
   check('FB-D4b 描述中的 <script> 不执行', md.xssScript === false, `script=${md.xssScript}`);
 
   // ---- FB-D2 状态流转 ----
-  await evalJs(`(() => { const s = document.querySelector('.d-hd .d-status'); s.value = 'in_progress'; s.dispatchEvent(new Event('change', { bubbles: true })); return 'ok'; })()`);
+  // 状态控件已从原生 <select> 改为自定义 Select（trigger + Popover 勾选）
+  await evalJs(`document.querySelector('.d-status-trigger').click(); 'ok'`);
+  await sleep(300);
+  const optResult = await evalJs(`(() => {
+    const o = [...document.querySelectorAll('.d-status-pop [role="option"]')].find(x => x.textContent.includes('进行中'));
+    if (o) o.click();
+    return o ? 'ok' : 'missing';
+  })()`);
   await sleep(600);
   const statusUpdate = await evalJs(`window.__UPDATES__[0]`);
-  check('FB-D2 状态流转 update_task 收到 status', statusUpdate?.changes?.status === 'in_progress', JSON.stringify(statusUpdate?.changes));
+  check('FB-D2 状态流转 update_task 收到 status', optResult === 'ok' && statusUpdate?.changes?.status === 'in_progress', JSON.stringify(statusUpdate?.changes));
+  // 活动流在「活动」Tab（详情三 Tab 改造后不再默认平铺）
+  await evalJs(`(() => { const tabs = document.querySelectorAll('.d-tab'); tabs[2].click(); return 'ok'; })()`);
+  await sleep(400);
   const actShown = await evalJs(`document.querySelector('.d-act .what')?.textContent || ''`);
   check('FB-D2b 活动流显示变更记录', actShown.includes('状态'), `text="${actShown.slice(0, 40)}"`);
 
@@ -179,6 +189,9 @@ async function main() {
   void titleEdited;
 
   // ---- FB-D5 发评论 ----
+  // composer 只在「评论」Tab 渲染（D2 切去了活动 Tab）
+  await evalJs(`(() => { const tabs = document.querySelectorAll('.d-tab'); tabs[1].click(); return 'ok'; })()`);
+  await sleep(300);
   await evalJs(`(() => {
     const input = document.querySelector('.d-composer input');
     input.value = '第一条评论 **加粗**';

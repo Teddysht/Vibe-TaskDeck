@@ -14,7 +14,7 @@ const PORT = 8481;
 const CHROME = process.env.CHROME_PATH || 'C:/Program Files/Google/Chrome/Application/chrome.exe';
 const DEBUG_PORT = 8499;
 const PROFILE = path.resolve('.out', 'profile-fbfilter');
-const PAGE_URL = `http://localhost:${PORT}/fullboard.html`;
+const PAGE_URL = `http://localhost:${PORT}/fullboard.html?view=board`; // ?view=board：仪表盘现为默认视图，看板类断言需显式入口
 const OUT = path.resolve('.out', 'fb-filters-verify-result.json');
 
 const MOCK_JS = `
