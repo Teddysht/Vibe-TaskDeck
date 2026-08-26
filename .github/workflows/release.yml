@@ -1,0 +1,74 @@
+# ==== Release 构建：tag 触发 → NSIS 安装包 → GitHub Release ====
+#
+# 链路：push tag v* → tauri build（NSIS setup exe）→ 产物挂到同名 Release。
+# 分发闭环：挂件「检查更新」读 api/releases/latest（Teddysht/Vibe-TaskDeck），
+# 比较 tag 与 CARGO_PKG_VERSION 后提示 → open_release_page 直达本 Release 下载页。
+#
+# 更新说明约定：Release 标题/正文取自 tag 注解（annotated tag）——
+#   git tag -a v0.3.3 -m "主题（成为 Release 标题）" -m "正文 markdown（成为 Release notes）"
+# 因此 tag 与 tauri.conf.json / Cargo.toml 版本必须一致（vX.Y.Z ↔ X.Y.Z），
+# CI 不做强校验，靠发版清单保证。
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: 构建并发布 Release
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - name: 检出仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: 安装 Rust（stable）
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust 编译缓存
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: widget/src-tauri
+
+      - name: 安装前端依赖
+        run: |
+          cd widget
+          npm ci
+
+      # tag 注解 → Release 标题（subject）与正文（body）；subject 拼接成
+      # 「vX.Y.Z — 主题」对齐既有 Release 命名惯例
+      - name: 提取 tag 注解为更新说明
+        id: tagmsg
+        shell: bash
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          SUBJ=$(git tag -l --format='%(contents:subject)' "$TAG")
+          {
+            echo "subject=$SUBJ"
+            echo 'body<<TAG_EOF'
+            git tag -l --format='%(contents:body)' "$TAG"
+            echo 'TAG_EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      # tauri-action：npm run build（beforeBuildCommand）→ cargo tauri build →
+      # NSIS setup exe（taskdeck-widget_X.Y.Z_x64-setup.exe）挂到 Release
+      - name: 构建并发布
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          projectPath: widget
+          tagName: ${{ github.ref_name }}
+          releaseName: ${{ github.ref_name }} — ${{ steps.tagmsg.outputs.subject }}
+          releaseBody: ${{ steps.tagmsg.outputs.body }}
+          releaseDraft: false
+          prerelease: false

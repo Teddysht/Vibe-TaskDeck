@@ -167,6 +167,13 @@ cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
 - 真实层：CDP 连真实挂件，验证 SQLite 往返与双窗口事件同步；fullboard target 按 URL 含 `fullboard.html` 匹配。
 - 历史教训：mock 数据字段与真实 `load_data` 曾不一致掩盖缺字段问题——改 mock 数据时逐一核对真实返回。
 
+## CI 与发版
+
+- CI（`.github/workflows/ci.yml`）：Windows 单栈两 job——CLI 契约冒烟 + 挂件构建与 mock 层回归（真实层需挂件 CDP，CI 不跑）。
+- 发版（`.github/workflows/release.yml`）：push tag `v*` 触发 → `tauri-apps/tauri-action` 构建 NSIS 安装包（`taskdeck-widget_X.Y.Z_x64-setup.exe`）→ 挂到同名 GitHub Release（Teddysht/Vibe-TaskDeck，公开仓）。Release 标题/正文取自 **tag 注解**（`subject` 拼「vX.Y.Z — 主题」，`body` 作 notes），与既有手写 Release 同格式。
+- 发版清单：① 三处版本号一致（`tauri.conf.json` / `Cargo.toml` / `Cargo.lock`）→ ② 发版 commit → ③ `git tag -a vX.Y.Z -m "主题" -m "正文 markdown"` → ④ push main + tag。tag 版本与 Cargo 版本不一致时 CI 不拦截（tauri-action 按 conf 版本命名产物），靠本清单保证。
+- 分发链路：挂件「检查更新」`check_update` 读 `api.github.com/repos/Teddysht/Vibe-TaskDeck/releases/latest`（5s 超时，失败静默），比较 tag 与 `CARGO_PKG_VERSION` → `open_release_page` 打开 Release 页手动下载安装。当前无应用内自更新（未接 updater 插件），与纯客户端单机定位一致。
+
 ## 环境变量
 
 | 变量 | 说明 | 默认 |
