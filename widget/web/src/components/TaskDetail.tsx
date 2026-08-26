@@ -14,15 +14,18 @@ import { STATUS_LABEL } from '../lib/types';
 
 export default function TaskDetail() {
   const detail = useAppStore((s) => s.detail);
+  const detailId = useAppStore((s) => s.detailId);
   const closeDetail = useAppStore((s) => s.closeDetail);
   const inputRef = useRef<HTMLInputElement>(null);
   const sendRef = useRef<HTMLButtonElement>(null);
 
-  // 挂载即拉取（等价旧 openDetail → refreshDetail；错误处理在 api 内 toast）
+  // 挂载或目标任务变化即拉取（等价旧 openDetail → refreshDetail；错误
+  // 处理在 api 内 toast）。detailId 依赖：通知路由可 detail→detail 直切
+  // （不经过 closeDetail 卸载重挂载），不订阅会停留在上一个任务。
   useEffect(() => {
-    refreshDetail().catch((e) => console.error('open detail failed', e));
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 覆盖层只挂载时拉一次，后续靠事件/轮询
-  }, []);
+    if (detailId) refreshDetail().catch((e) => console.error('open detail failed', e));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 普通路径挂载时 detailId 已是新值，语义一致
+  }, [detailId]);
 
   if (!detail) {
     return (

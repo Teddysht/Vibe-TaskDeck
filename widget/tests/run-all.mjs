@@ -33,6 +33,7 @@ const MOCK_SUITE = [
   { file: 'fb-filters-verify.mjs',  name: 'FB 筛选+URL 同步+undo 栈' },
   { file: 'fb-archive-verify.mjs',  name: 'FB 归档面板+右键菜单+标签编辑' },
   { file: 'fb-motion-verify.mjs',   name: 'FB 动效（Tab 滑动/视图过渡/抽屉可中断/跨列 FLIP）' },
+  { file: 'notify-verify.mjs',      name: '通知动作闭环（点击路由→展开+直达详情）' },
 ];
 
 const REAL_SUITE = [
