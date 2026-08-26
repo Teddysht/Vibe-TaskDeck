@@ -67,7 +67,10 @@ export default function App() {
   const maximized = useMaximized(tryGetCurrentWindow());
   // 抽屉退出两段式：closing 态跑 120ms 反向动画（CSS fb-panel-out），
   // 动画结束才真正卸载（select(null)）。时长与 .fb-detail.closing 锚定。
+  // 卸载定时器必须可取消：closing 中途重开（onCardClick）时若不取消，
+  // 到点仍会 select(null) 把刚恢复的抽屉卸掉（入场已改可中断续走，JS 同步）。
   const [detailClosing, setDetailClosing] = useState(false);
+  const closeTimerRef = useRef<number | null>(null);
   // 标题栏弹窗：新建（Popover）/ 归档（右侧 Sheet，与详情同语言）/ 设置（居中 Dialog）
   const [newOpen, setNewOpen] = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
@@ -109,14 +112,22 @@ export default function App() {
   function closeDetail() {
     if (detailClosing) return; // 防重入（closing 期间再点关闭忽略）
     setDetailClosing(true);
-    window.setTimeout(() => {
+    closeTimerRef.current = window.setTimeout(() => {
+      closeTimerRef.current = null;
       select(null);
       setDetailClosing(false);
     }, 120);
   }
 
   function onCardClick(task: Task) {
-    if (detailClosing) setDetailClosing(false); // closing 中切换目标：立即恢复
+    if (detailClosing) {
+      // closing 中切换目标：取消挂起的卸载定时器 + 立即恢复（CSS transition 从定格处续回）
+      if (closeTimerRef.current !== null) {
+        window.clearTimeout(closeTimerRef.current);
+        closeTimerRef.current = null;
+      }
+      setDetailClosing(false);
+    }
     select(task.id);
   }
 

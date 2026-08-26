@@ -7,6 +7,7 @@
  * 数据刷新：写操作后本地 issue_detail 重拉 + Rust 事件兜底。
  * ============================================================ */
 import { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import { invoke } from '../../lib/tauri';
 import { errMsg, showToast } from '../../lib/toast';
 import type { IssueDetail, Task } from '../../lib/types';
@@ -332,13 +333,25 @@ export default function TaskDetailPanel({
         </div>
 
         {/* ---- 三 Tab 导航（下划线式，sticky 顶部）：详情 / 评论 / 活动 ---- */}
+        {/* 下划线是共享元素（layoutId）：切 Tab 时一根线平移到目标位置，
+            而非旧线淡出新线淡入。曲线对齐 tokens --ease-out。 */}
         <div className="d-tabs" role="tablist" aria-label="详情分区">
           <button
             className={`d-tab${tab === 'detail' ? ' on' : ''}`}
             role="tab"
             aria-selected={tab === 'detail'}
             onClick={() => setTab('detail')}
-          >详情</button>
+          >
+            详情
+            {tab === 'detail' && (
+              <motion.span
+                layoutId="d-tab-line"
+                className="d-tab-line"
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                aria-hidden="true"
+              />
+            )}
+          </button>
           <button
             className={`d-tab${tab === 'comments' ? ' on' : ''}`}
             role="tab"
@@ -347,6 +360,14 @@ export default function TaskDetailPanel({
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22z"/></svg>
             评论 <span className="n">{comments.length}</span>
+            {tab === 'comments' && (
+              <motion.span
+                layoutId="d-tab-line"
+                className="d-tab-line"
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                aria-hidden="true"
+              />
+            )}
           </button>
           <button
             className={`d-tab${tab === 'activity' ? ' on' : ''}`}
@@ -356,6 +377,14 @@ export default function TaskDetailPanel({
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
             活动
+            {tab === 'activity' && (
+              <motion.span
+                layoutId="d-tab-line"
+                className="d-tab-line"
+                transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
+                aria-hidden="true"
+              />
+            )}
           </button>
         </div>
 

@@ -333,6 +333,16 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
 /* 响应式策略：窗口 <1280px 抽屉浮层化（overlay，带阴影覆盖在主内容上），
    ≥1280px 恢复并排固定 400px。锚点是 .fb-main（position:relative）。 */
 .fb-main { position: relative; }
+/* 三大视图（仪表盘/看板/列表）切换：内容 150ms 上浮淡入——视图切换是
+   全应用最高频的动效触点，不能瞬间替换。viewMode 切换即组件重挂载，
+   动画由 mount 触发；150ms 介于 fast(120) 与 base(180) 之间（切入要轻快）。 */
+.fb-board, .fb-list, .fb-dash {
+  animation: fb-view-in 150ms var(--ease-out);
+}
+@keyframes fb-view-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
 /* <1280px 详情浮层化时的画布遮罩（原型 overlay 口径；纯视觉，关闭走 Esc/×） */
 @media (max-width: 1279px) {
   .fb-main:has(.fb-detail)::before {
@@ -355,9 +365,12 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
   background: var(--bg-surface);
   min-height: 0;
   box-shadow: -16px 0 40px rgba(0,0,0,.4); /* 浮层与主内容的层级分离 */
-  animation: fb-panel-in var(--duration-base) var(--ease-out);
-  /* 主题切换颜色过渡（颜色族 only；animation 不受影响） */
-  transition: background-color var(--duration-base) var(--ease-out),
+  /* 入场由 @starting-style + transition 承担（可中断：closing 中途重开时
+     从当前位置续走，而非 keyframes 从零重启）；退出仍走 .closing keyframes
+     （animation 优先于 transition，互不干扰）。颜色族过渡为主题切换保留。 */
+  transition: opacity var(--duration-base) var(--ease-out),
+              transform var(--duration-base) var(--ease-out),
+              background-color var(--duration-base) var(--ease-out),
               border-color var(--duration-base) var(--ease-out);
 }
 @media (min-width: 1280px) {
@@ -368,9 +381,12 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
     box-shadow: none;
   }
 }
-@keyframes fb-panel-in {
-  from { opacity: 0; transform: translateX(8px); }
-  to { opacity: 1; transform: none; }
+/* 抽屉/Sheet 入场起始样式：首帧从右侧 8px 淡入处起跳（与原 fb-panel-in 同轨迹） */
+@starting-style {
+  .fb-detail, .fb-archive {
+    opacity: 0;
+    transform: translateX(8px);
+  }
 }
 /* 菜单入场（右键/标签下拉）：从触发点方向缩放浮现（150ms，AUDIT 菜单预算
    下限；scale 起点 0.96 非 0——物理性） */
@@ -378,9 +394,10 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
   from { opacity: 0; transform: scale(0.96); }
   to { opacity: 1; transform: scale(1); }
 }
-/* 归档面板展开：右侧 8px 淡入滑入（与 fb-panel-in 同构，150ms） */
-/* fb-slide-in 已随归档常驻侧栏移除（归档现为顶栏入口 + Sheet） *//* 抽屉退出（fb-panel-in 的镜像反向；120ms 低于入场 180ms——退出要快）。
-   时长与 App.tsx closeDetail 的 setTimeout 锚定，改动须同步两处。 */
+/* 抽屉退出（入场的镜像反向；120ms 低于入场 180ms——退出要快）。
+   时长与 App.tsx closeDetail 的 setTimeout 锚定，改动须同步两处。
+   keyframes 退出是刻意保留的：forwards 定格终态，120ms 后由 setTimeout 卸载；
+   中途重开（.closing 移除）时 transition 自动从定格处续回——两段互补。 */
 .fb-detail.closing {
   animation: fb-panel-out 120ms var(--ease-out) forwards;
 }
@@ -697,6 +714,7 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
   margin-top: -14px;
 }
 .d-tab {
+  position: relative;             /* 共享下划线（.d-tab-line）的定位锚 */
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -706,15 +724,24 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
   color: var(--text-weak);
   border: none;
   background: transparent;
-  border-bottom: 2px solid transparent;
+  border-bottom: 2px solid transparent;   /* 仅占位（与 .d-tabs 底线等高对齐），不渲染颜色 */
   margin-bottom: -1px;
   cursor: pointer;
-  transition: color var(--duration-fast) var(--ease-out),
-              border-color var(--duration-fast) var(--ease-out);
+  transition: color var(--duration-fast) var(--ease-out);
 }
 .d-tab svg { width: 12px; height: 12px; }
 .d-tab:hover { color: var(--text-primary); }
-.d-tab.on { color: var(--text-primary); font-weight: 600; border-bottom-color: var(--fb-primary); }
+.d-tab.on { color: var(--text-primary); font-weight: 600; }
+/* 激活下划线：motion layoutId 共享元素，切 Tab 时整根平移（非逐 tab 淡入） */
+.d-tab-line {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: var(--fb-primary);
+}
 .d-tab .n {
   font-size: var(--font-xs);
   color: var(--text-weak);
@@ -1730,7 +1757,9 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
   background: var(--bg-surface);
   min-height: 0;
   box-shadow: var(--fb-shadow-lg), -16px 0 40px rgba(0, 0, 0, .3);
-  animation: fb-panel-in var(--duration-base) var(--ease-out);
+  /* 入场与 .fb-detail 同口径：@starting-style + transition（见上方起始样式块） */
+  transition: opacity var(--duration-base) var(--ease-out),
+              transform var(--duration-base) var(--ease-out);
 }
 @media (min-width: 1280px) {
   .fb-archive { box-shadow: -16px 0 40px rgba(0, 0, 0, .3); }
@@ -1973,13 +2002,15 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
 
 /* ============ 动效豁免（对齐挂件 tokens.css 同一降级口径） ============ */
 @media (prefers-reduced-motion: reduce) {
-  .fb-detail { animation: fb-panel-in-reduced var(--duration-fast) linear; }
-  @keyframes fb-panel-in-reduced { from { opacity: 0 } to { opacity: 1 } }
+  /* 入场已改 @starting-style + transition：只保留 opacity 过渡（位移不
+     transition 即瞬时归位 = 纯淡入，与原 fb-panel-in-reduced 口径一致） */
+  .fb-detail, .fb-archive { transition: opacity var(--duration-fast) linear; }
   .fb-detail.closing { animation: fb-panel-out-reduced var(--duration-fast) linear forwards; }
   @keyframes fb-panel-out-reduced { from { opacity: 1 } to { opacity: 0 } }
   .fb-ctxmenu, .d-label-menu, .fb-filtermenu, .fb-newtask, .d-more-menu { animation: fb-menu-in-reduced var(--duration-fast) linear; }
   @keyframes fb-menu-in-reduced { from { opacity: 0 } to { opacity: 1 } }
-  .fb-archive { animation: fb-panel-in-reduced var(--duration-fast) linear; }
+  /* 视图切换降为纯淡入（位移豁免） */
+  .fb-board, .fb-list, .fb-dash { animation: fb-menu-in-reduced var(--duration-fast) linear; }
   .fb-card.is-moving { animation: none; }        /* 脉冲属闪烁类，完整豁免；outline 静态保留 */
   .fb-col { transition-property: background; }   /* outline-color 过渡一并豁免（保守侧） */
   .fb-card.is-settling { animation: none; }

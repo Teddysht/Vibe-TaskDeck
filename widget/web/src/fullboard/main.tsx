@@ -1,5 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
+import { MotionConfig } from 'motion/react';
 import App from './App';
 import './fullboard.css';
 import { initTheme } from '../lib/theme';
@@ -19,6 +20,10 @@ window.__widgetStore = useBoardStore;
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    {/* reducedMotion="user"：motion 库全部动效（含 layout 平移）对系统
+        减动效偏好瞬时完成，与 CSS 侧 prefers-reduced-motion 豁免同口径 */}
+    <MotionConfig reducedMotion="user">
+      <App />
+    </MotionConfig>
   </StrictMode>,
 );
