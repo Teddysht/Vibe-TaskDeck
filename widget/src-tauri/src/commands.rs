@@ -407,12 +407,11 @@ pub async fn open_full_board(app: AppHandle) -> Result<serde_json::Value, db::Co
         // transparent + 页面圆角：与挂件同款方案——Win10 无系统窗口圆角，
         // 圆角靠透明窗口 + .fb-root 的 border-radius 裁剪（最大化时前端
         // 切 .maximized 类归零，避免贴边切出缺口）。
-        // shadow(true) + 前端内缩：DWM 阴影提供窗口投影（无框窗口默认丢阴影，
-        // 无投影窗口「贴在桌面上」）；DWM 帧实测比窗口矩形内缩 8px 且为直角，
-        // 故前端 .fb-root 同步 inset 内缩（CSS --fb-inset），阴影跟窗口矩形
-        // 走、页面圆角独立——四角干净且有投影（成熟方案：内缩阴影窗）。
+        // shadow(false)：DWM 阴影帧与透明窗口的组合问题多——shadow(true) 时
+        // 帧为直角且内缩（圆角外露直角暗边）；内缩让位方案又会在四周留下
+        // 可见的半透明阴影带。与挂件一致：无阴影，干净边缘优先。
         .decorations(false)
-        .shadow(true)
+        .shadow(false)
         .transparent(true)
         // HTML5 drag-and-drop 修复：wry 默认给 WebView2 注册 OS 级 OLE
         // drop target（文件拖放用），会吞掉页面内的 HTML5 DnD——看板卡片

@@ -14,15 +14,12 @@ body {
   line-height: normal;
 }
 
-/* ============ 根容器：窗口级圆角 + DWM 阴影共存（内缩阴影窗方案） ============
-   shadow(true) 让 DWM 画窗口投影（否则窗口「贴在桌面上」）；DWM 帧为直角
-   且实测比窗口矩形内缩约 8px——根容器同步 inset 内缩（--fb-inset），
-   阴影跟窗口矩形走、页面圆角独立，四角干净。
-   最大化时归零（贴边窗口不留缝、圆角归零）。 */
+/* ============ 根容器：窗口级圆角（透明窗口 + 页面裁剪，挂件同款） ============
+   shadow(false)（DWM 阴影帧与透明窗口组合问题多，弃用）——根容器
+   精确锚定视口，圆角+描边干净。最大化时归零。 */
 .fb-root {
-  --fb-inset: 8px;
   position: absolute;
-  inset: var(--fb-inset);
+  inset: 0;
   background: var(--bg-canvas);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
