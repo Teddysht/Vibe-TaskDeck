@@ -3,11 +3,21 @@
  * 图标随当前主题切换（dark 显示太阳=切到亮色，light 显示月亮）。
  * class 由调用方给（.ic 挂件语言 / wc 风格 fullboard 语言）。
  * ============================================================ */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { currentTheme, toggleTheme, type ThemeMode } from '../lib/theme';
+import { listen } from '../lib/tauri';
 
 export default function ThemeToggle({ className = '' }: { className?: string }) {
   const [mode, setMode] = useState<ThemeMode>(currentTheme());
+  // 另一窗切换主题时同步本按钮图标（theme-changed 全窗广播）
+  useEffect(() => {
+    const p = listen<string>('theme-changed', (e) => {
+      if (e.payload === 'light' || e.payload === 'dark') setMode(e.payload);
+    });
+    return () => {
+      p.then((un) => un()).catch(() => {});
+    };
+  }, []);
   return (
     <button
       className={className}

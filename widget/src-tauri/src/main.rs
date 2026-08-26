@@ -103,6 +103,7 @@ fn main() {
             commands::get_app_version,
             commands::check_update,
             commands::open_release_page,
+            commands::broadcast_theme,
         ])
         .setup(|app| {
             // 单实例锁：已在运行时直接退出，不重复拉起第二个挂件

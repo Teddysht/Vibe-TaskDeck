@@ -11,6 +11,8 @@
 export type ThemeMode = 'light' | 'dark';
 const STORAGE_KEY = 'taskboard-theme';
 
+import { invoke, listen } from './tauri';
+
 export function resolveTheme(): ThemeMode {
   try {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -39,6 +41,9 @@ export function setTheme(mode: ThemeMode): void {
   } catch {
     /* 持久化失败仅影响下次启动偏好 */
   }
+  // 跨窗同步：挂件与全版看板是两个独立 WebView（localStorage 不互通），
+  // 经 Rust broadcast_theme 事件广播，另一窗跟随并写入自己的存储
+  invoke('broadcast_theme', { mode }).catch(() => {});
 }
 
 export function toggleTheme(): ThemeMode {
@@ -47,7 +52,7 @@ export function toggleTheme(): ThemeMode {
   return next;
 }
 
-/** React 启动时调用：同步一次（内联脚本已设，幂等）+ 监听系统偏好变化 */
+/** React 启动时调用：同步一次（内联脚本已设，幂等）+ 监听系统偏好变化 + 跨窗主题同步 */
 export function initTheme(): void {
   applyTheme(resolveTheme());
   // 无显式选择时跟随系统实时切换；有显式选择则不动
@@ -59,4 +64,17 @@ export function initTheme(): void {
     }
     applyTheme(resolveTheme());
   });
+  // 另一窗切换主题时跟随（broadcast_theme 全窗广播；自身切换也会收到，
+  // applyTheme 幂等无副作用；ThemeToggle 的本地 state 由其自身 setState 维护）
+  listen<string>('theme-changed', (e) => {
+    const mode = e.payload;
+    if (mode === 'light' || mode === 'dark') {
+      applyTheme(mode);
+      try {
+        localStorage.setItem(STORAGE_KEY, mode);
+      } catch {
+        /* 跟随失败不影响本次会话 */
+      }
+    }
+  }).catch(() => {});
 }

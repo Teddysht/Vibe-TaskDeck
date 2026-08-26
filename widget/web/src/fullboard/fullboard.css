@@ -14,14 +14,15 @@ body {
   line-height: normal;
 }
 
-/* ============ 根容器：窗口级圆角（与挂件 .mini/.large 同一语言） ============
-   transparent 窗口 + 根 border-radius 裁出圆角；1px 描边补透明窗口丢失的
-   轮廓（DWM shadow 只给外阴影）。最大化时归零——贴边窗口圆角会切出缺口。
-   几何：absolute + inset 0 锚定视口（100% 高 + border 会溢出视口 1px，
-   溢出部分被裁后圆角处露出直角残边——即「圆角了但有直角描边」的根因）。 */
+/* ============ 根容器：窗口级圆角 + DWM 阴影共存（内缩阴影窗方案） ============
+   shadow(true) 让 DWM 画窗口投影（否则窗口「贴在桌面上」）；DWM 帧为直角
+   且实测比窗口矩形内缩约 8px——根容器同步 inset 内缩（--fb-inset），
+   阴影跟窗口矩形走、页面圆角独立，四角干净。
+   最大化时归零（贴边窗口不留缝、圆角归零）。 */
 .fb-root {
+  --fb-inset: 8px;
   position: absolute;
-  inset: 0;
+  inset: var(--fb-inset);
   background: var(--bg-canvas);
   border: 1px solid var(--border-subtle);
   border-radius: var(--radius-lg);
@@ -33,6 +34,7 @@ body {
   --font-lg: 16px;
 }
 .fb-root.maximized {
+  --fb-inset: 0px;
   border-radius: 0;
   border: none;
 }
