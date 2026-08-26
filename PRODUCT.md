@@ -35,7 +35,7 @@ Vibe-TaskDeck 的本地化封装与增强。让任务追踪成为 AI 工作流�
 
 ## Capabilities and Constraints
 
-- **已实现**：纯客户端挂件（内嵌页面 + rusqlite 数据层 + 内建新建表单 + 流转按钮 + 事件广播 + 5 秒轮询兜底感知外部写入）；自研全版看板（七列拖拽/详情编辑/筛选/列表/归档/undo，React 19 + Tailwind v4 + shadcn 主题层）；**UI 统一精修（2026-08-25）**：全版看板无框自绘标题栏（与挂件同窗口语言）、三端统一暗色细滚动条、详情抽屉 <1280px 浮层化响应式、亮/暗双主题（localStorage > 系统偏好 > 暗色，html 内联防闪）；taskctl 本地直连（输出契约与上游完全一致：schemaVersion:2 JSON、退出码 0/2/3/4/5）；`clean --purge-data` 等清理边界。
+- **已实现**：纯客户端挂件（内嵌页面 + rusqlite 数据层 + 内建新建表单 + 流转按钮 + 事件广播 + 5 秒轮询兜底感知外部写入）；**状态通知闭环（2026-08-26）**：外部流转进 in_review/blocked 弹系统 toast，点击直达任务详情（含 AUMID 启动自注册，免安装直跑可用）；自研全版看板（七列拖拽/详情编辑/筛选/列表/归档/undo，React 19 + Tailwind v4 + shadcn 主题层）；**UI 统一精修（2026-08-25）**：全版看板无框自绘标题栏（与挂件同窗口语言）、三端统一暗色细滚动条、详情抽屉 <1280px 浮层化响应式、亮/暗双主题（localStorage > 系统偏好 > 暗色，html 内联防闪）；taskctl 本地直连（输出契约与上游完全一致：schemaVersion:2 JSON、退出码 0/2/3/4/5）；`clean --purge-data` 等清理边界。
 - **未实现 / 待决**：
   - taskctl 本地模式不支持 cloud / project map / relation / attachment（关联与附件经挂件全版看板详情面板操作；taskctl 侧封装待需求确认）；
   - AI Chat / Workflow / Gantt / Jira / 云同步 / 多项目（明确不做）；

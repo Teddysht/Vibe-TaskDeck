@@ -12,6 +12,7 @@
 - [命令层（Tauri invoke）](#命令层tauri-invoke)
 - [双窗口与 WebView2 注意事项](#双窗口与-webview2-注意事项)
 - [事件同步机制](#事件同步机制)
+- [状态通知（系统 toast）](#状态通知系统-toast)
 - [筛选语义](#筛选语义)
 - [设计令牌与主题](#设计令牌与主题)
 - [动效体系](#动效体系)
@@ -123,6 +124,14 @@ npm run build   # = tsc --noEmit && vite build && vite build -c vite.fullboard.c
 
 写命令经 Tauri `emit` 广播到两窗口（事件名禁点号）：`task-updated` / `task-archived` / `task-restored` / `task-deleted` / `labels-updated` / `relation-updated`。两窗口收到后全量 `load_data` 刷新（单项目量级足够），另有约 5 秒轮询兜底感知外部（taskctl）写入。
 
+## 状态通知（系统 toast）
+
+外部（taskctl / AI）把任务流转进 **in_review / blocked** 时弹 Windows toast，点击 → 唤起挂件 + 展开面板直达该任务详情（`notification-click{taskId}` → App.tsx 路由 → `openDetail`；详情已展开时 `TaskDetail` 按 `detailId` 依赖直切，不重挂载）。
+
+- **diff 决策**（`commands.rs::notify_status_changes`，cargo 单测钉住）：挂件每次 `load_data` 与上次快照（`NotifyBaseline`，内存态）比对；首次只建基线；基线后新增任务直落同样算「新进入」；归档不弹。只捕捉外部写入——挂件自身 UI 操作走事件即时刷新。
+- **WinRT 直连**：`tauri-winrt-notification`（插件层未暴露 Activated 回调）；`show()` 内含 10ms sleep，跑在命令线程。
+- **AUMID 自注册**（`main.rs::ensure_aumid_registered`）：启动时 `reg add HKCU\...\AppUserModelId\<identifier>`。**坑**：AUMID 未注册时 `Show()` 不报错但系统静默丢弃整条 toast——免安装直跑 exe 必然踩中；另 Windows 全局 `ToastEnabled=0` 也会整层拦截。
+
 ## 筛选语义
 
 筛选栏收纳为「触发器 + 下拉面板」（对齐上游 TaskFilterMenu / Linear 范式）：
@@ -148,7 +157,7 @@ npm run build   # = tsc --noEmit && vite build && vite build -c vite.fullboard.c
 
 ```powershell
 cd widget; npm run build              # 前置：产物新鲜
-cd tests; node run-all.mjs            # mock 层 10 套件（无头 Chrome + mock __TAURI_INTERNALS__）
+cd tests; node run-all.mjs            # mock 层 12 套件（无头 Chrome + mock __TAURI_INTERNALS__）
 # 真实层（连运行中的挂件）：挂件以 WEBVIEW2_CDP_PORT=8490 启动后
 $env:WIDGET_CDP_PORT=8490; node run-all.mjs
 cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
