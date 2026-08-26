@@ -109,7 +109,7 @@ export default function FilterBar() {
       <div className="fb-filterwrap" ref={menuRef}>
         <button
           id="fb-filter-btn"
-          className={`fb-filterbtn${activeValues.length > 0 ? ' on' : ''}`}
+          className={`fb-filterbtn${open ? ' open' : ''}`}
           aria-expanded={open}
           onClick={() => setOpen((v) => !v)}
         >

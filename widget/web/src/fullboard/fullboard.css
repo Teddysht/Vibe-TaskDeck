@@ -1038,9 +1038,12 @@ html.light .fb-brand .mark .bm-dark-group { display: none }
   transition: background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out);
 }
 .fb-filterbtn svg { width: 13px; height: 13px; }
-.fb-filterbtn svg.chev { width: 12px; height: 12px; }
+.fb-filterbtn svg.chev { width: 12px; height: 12px; transition: transform var(--duration-fast) var(--ease-out); }
 .fb-filterbtn:hover { background: var(--bg-surface-2); color: var(--text-primary); }
-.fb-filterbtn.on { color: var(--accent-hover); border-color: var(--accent-hover); }
+/* 状态语义分离：open=菜单展开（primary 边强调）；激活筛选只由计数徽标表达，
+   不再整钮高亮——「按钮激活」与「菜单展开」两态不再混淆 */
+.fb-filterbtn.open { border-color: var(--fb-primary); }
+.fb-filterbtn.open svg.chev { transform: rotate(180deg); }
 /* 激活计数：brand-soft 徽标（实心 accent 在筛选栏太吵） */
 .fb-filtercount {
   font-size: 10px;
