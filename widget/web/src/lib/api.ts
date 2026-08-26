@@ -2,7 +2,7 @@
  * 数据层 —— 移植自 api.js（Tauri invoke / 事件 / 轮询的命令封装）
  *
  * 纯客户端架构：读写全部走 Rust command 直连 SQLite。
- *   · 挂件自身的写操作 → Rust emit task-created/task-moved → 即时刷新
+ *   · 挂件自身的写操作 → Rust emit task-created/task-moved/task-updated → 即时刷新
  *   · 外部写入（taskctl / server 模式同库）→ 靠轮询兜底发现
  * 事件监听与轮询的定时器生命周期见 hooks/（StrictMode 双挂载安全）。
  * ============================================================ */
@@ -50,6 +50,34 @@ export async function moveTask(task: { id: string; version: number }, status: st
   // 无论成败都刷新一次（成功用最新数据）
   await loadData().catch(() => {});
   // 二次仍冲突：抛错让调用方提示用户，不再静默等轮询兜底
+  if (result && (result as { conflict?: boolean }).conflict) {
+    throw new Error('任务刚被外部修改，请重试');
+  }
+}
+
+// 写操作：字段更新（乐观并发，version 过期 → 重读重试一次；
+// 重试用调用方的 changes 覆盖——字段级编辑意图明确，不整任务覆盖）
+export async function updateTask(
+  task: { id: string; version: number },
+  changes: Record<string, unknown>,
+): Promise<void> {
+  const doUpdate = async (version: number) => {
+    try {
+      return await invoke('update_task', { id: task.id, version, changes });
+    } catch (e) {
+      if (isCommandError(e) && e.code === 'VERSION_CONFLICT') return { conflict: true };
+      throw e;
+    }
+  };
+
+  let result = await doUpdate(task.version);
+  if (result && (result as { conflict?: boolean }).conflict) {
+    await loadData().catch(() => {});
+    const fresh = useAppStore.getState().tasks.find((t) => t.id === task.id);
+    if (!fresh) throw new Error('任务已被删除，修改未生效');
+    if (fresh.version) result = await doUpdate(fresh.version);
+  }
+  await loadData().catch(() => {});
   if (result && (result as { conflict?: boolean }).conflict) {
     throw new Error('任务刚被外部修改，请重试');
   }

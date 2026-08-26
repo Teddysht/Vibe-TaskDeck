@@ -20,7 +20,10 @@ const DEFAULT_PROJECT_LABELS_JSON: &str = "[\"缺陷\",\"特性\",\"for-claude\"
 /// 挂件写操作的稳定 thread 标识（对齐 widget config.js 的 THREAD_ID）
 const WIDGET_THREAD_ID: &str = "taskboard-widget";
 
-/// 挂件侧 actor：本地用户（与上游 app.mjs 无头请求的默认 actor 一致）
+/// 挂件侧 actor：本地用户（与上游 app.mjs 无头请求的默认 actor 一致）。
+/// 单机单用户假设的产物——未来多成员在此预留 env 覆盖点
+/// （VIBE_TASKDECK_USER_ID/NAME，与 AI 侧 VIBE_TASKDECK_ACTOR_* 对称），
+/// 详见 TECHNICAL.md「已知技术债」。
 const LOCAL_USER_ACTOR: (&str, &str, &str) = ("user", "local-user", "本地用户");
 
 const TASK_STATUSES: [&str; 7] = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "canceled"];

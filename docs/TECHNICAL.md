@@ -180,3 +180,4 @@ cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
 
 - ~~`cli/taskctl-local.mjs` 依赖本地 `upstream/`（不入库）的 `TaskboardDatabase`~~ 已清偿（2026-08-26）：数据层自研为 `cli/database.mjs` + `cli/domain.mjs`（node:sqlite，DDL/PRAGMA/乐观锁/活动流语义对齐 `widget/src-tauri/src/db.rs`），克隆即可用；`upstream/` 仅保留本地语义参考用途。
 - taskctl 本地模式不支持 cloud / project map / relation / attachment（关联与附件经挂件全版看板操作）。
+- 人侧 actor 身份为 db.rs 硬编码 `LOCAL_USER_ACTOR`（单机单用户假设）。未来引入多成员时采用与 `VIBE_TASKDECK_ACTOR_ID/NAME` 对称的 `VIBE_TASKDECK_USER_ID/NAME` env 方案，不要另发明机制。数据模型无迁移负担（行级 `(type,id,name,avatar)` 快照）。重启条件三选一：数据共享通道立项 / 真实单机多用户反馈 / assignee 再分配需求——注意第一条本身是 PRODUCT.md 红线变更，须先修订 PRODUCT.md 再动代码。

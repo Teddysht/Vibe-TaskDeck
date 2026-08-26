@@ -1,5 +1,5 @@
 /* ============================================================
- * Tauri 事件 hook —— task-created / task-moved / task-comment
+ * Tauri 事件 hook —— task-created / task-moved / task-updated / task-comment
  * ⚠ 事件名不得含点号：Tauri v2 事件名校验只允许字母数字与 - / : _，
  *   旧名 task.created 曾被静默拒绝（错误被吞），一直靠轮询兜底。
  * StrictMode 双挂载：unlisten 是异步 promise，cleanup 需处理
@@ -22,6 +22,13 @@ export function useTauriEvents(): void {
         });
         unlistens.push(un);
       }
+      // 全版看板/外部字段编辑（update_task）→ 列表即时刷新 + 详情顺带刷新
+      // （未补此前 L2 详情要等 5s 轮询才看到全版看板改的标题/优先级）
+      const unUpd = await listen('task-updated', () => {
+        loadData().catch(() => useAppStore.getState().setOnline(false));
+        refreshDetail().catch(() => {});
+      });
+      unlistens.push(unUpd);
       const un = await listen('task-comment', () => {
         refreshDetail().catch(() => {});
       });
