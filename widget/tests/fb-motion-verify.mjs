@@ -43,6 +43,9 @@ window.__TAURI_INTERNALS__ = {
       if (t) { Object.assign(t, args.changes); t.version += 1; }
       return Promise.resolve(t ? { ...t } : null);
     }
+    if (cmd === 'get_app_version') return Promise.resolve('0.2.3');   // 非 string 会崩 React 渲染（version 作为 child）
+    if (cmd === 'plugin:autostart|is_enabled') return Promise.resolve(false);
+    if (cmd === 'check_update') return Promise.resolve({ tag: 'v0.2.3', name: '', notes: '', url: '', newer: false });
     return Promise.resolve({});
   },
   transformCallback: () => 0,
@@ -259,6 +262,57 @@ async function main() {
   })()`);
   check('FB-M4b 状态流转后卡片位于 done 列', flipResult.col === 'done', `col=${flipResult.col}`);
   check('FB-M4c 跨列过程 wrapper 有平移 transform（FLIP 动画在跑）', flipResult.seen === true && flipResult.samples > 0, JSON.stringify(flipResult));
+
+  // ---- FB-M5 弹层退出动画（useExitAnimation 两段式：closing 动画 → 卸载） ----
+  // 采样契约：点击与采样必须在同一 evalJs 的 async IIFE 内完成——closing
+  // 类由 useEffect（paint 后）挂上，click 同步返回时太早；而跨 evalJs 的
+  // CDP 往返（20-80ms/次）又会耗掉 100-120ms 的 closing 窗口。页内
+  // await 30ms 是两者兼得的唯一窗口
+  await evalJs(`document.querySelector('.fb-archivebtn').click(); 'ok'`);
+  await sleep(300);
+  const archiveClosing = await evalJs(`(async () => {
+    document.querySelector('.fb-archive .d-close').click();
+    await new Promise(r => setTimeout(r, 30));
+    const el = document.querySelector('.fb-archive');
+    if (!el) return { found: false };
+    return { found: true, closing: el.classList.contains('closing'), anim: getComputedStyle(el).animationName };
+  })()`);
+  check('FB-M5a 归档 Sheet 退出中挂 fb-panel-out（非瞬间卸载）', archiveClosing && archiveClosing.found && archiveClosing.closing && archiveClosing.anim === 'fb-panel-out', JSON.stringify(archiveClosing));
+  await sleep(250);
+  const archiveGone = await evalJs(`document.querySelector('.fb-archive') === null`);
+  check('FB-M5b 归档 Sheet 120ms 后完成卸载', archiveGone === true, `gone=${archiveGone}`);
+
+  // 设置 Dialog：退出 overlay + 面板同步 fb-dialog-out
+  await evalJs(`document.querySelector('.fb-settingsbtn').click(); 'ok'`);
+  await sleep(300);
+  const dialogClosing = await evalJs(`(async () => {
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    await new Promise(r => setTimeout(r, 30));
+    const d = document.querySelector('.fb-dialog');
+    const o = document.querySelector('.fb-dialog-overlay');
+    if (!d || !o) return { found: false };
+    return { found: true, dAnim: getComputedStyle(d).animationName, oAnim: getComputedStyle(o).animationName };
+  })()`);
+  check('FB-M5c 设置 Dialog 退出 overlay+面板同步退出动画', dialogClosing && dialogClosing.found && dialogClosing.dAnim === 'fb-dialog-out' && dialogClosing.oAnim === 'fb-overlay-out', JSON.stringify(dialogClosing));
+  await sleep(250);
+  const dialogGone = await evalJs(`document.querySelector('.fb-dialog-overlay') === null`);
+  check('FB-M5d 设置 Dialog 退出后完成卸载', dialogGone === true, `gone=${dialogGone}`);
+
+  // 新建 Popover：退出 100ms fb-menu-out
+  await evalJs(`(() => { const b = document.querySelector('.fb-newwrap .fb-headerbtn'); b.click(); return 'ok'; })()`);
+  await sleep(300);
+  const popClosing = await evalJs(`(async () => {
+    const b = document.querySelector('.fb-newwrap .fb-headerbtn');
+    b.click(); // 再点关闭
+    await new Promise(r => setTimeout(r, 30));
+    const p = document.querySelector('.fb-newtask');
+    if (!p) return { found: false };
+    return { found: true, closing: p.classList.contains('closing'), anim: getComputedStyle(p).animationName };
+  })()`);
+  check('FB-M5e 新建 Popover 退出挂 fb-menu-out', popClosing && popClosing.found && popClosing.closing && popClosing.anim === 'fb-menu-out', JSON.stringify(popClosing));
+  await sleep(200);
+  const popGone = await evalJs(`document.querySelector('.fb-newtask') === null`);
+  check('FB-M5f 新建 Popover 退出后完成卸载', popGone === true, `gone=${popGone}`);
 
   fs.writeFileSync(OUT, JSON.stringify({ results }, null, 2), 'utf8');
   console.log('---');

@@ -11,6 +11,7 @@ import type { Task } from '../../lib/types';
 import { useBoardStore } from '../store/useBoardStore';
 import { loadBoardData } from '../api';
 import { pushUndo } from '../store/undoStack';
+import { useExitAnimation } from '../hooks/useExitAnimation';
 
 export default function OtherTasksPanel({
   open,
@@ -22,6 +23,8 @@ export default function OtherTasksPanel({
   const [busyId, setBusyId] = useState<string | null>(null);
   const tasks = useBoardStore((s) => s.tasks);
   const archived = tasks.filter((t) => t.archivedAt);
+  // 退出与详情抽屉同语言：closing 120ms fb-panel-out 后卸载
+  const { mounted, closing } = useExitAnimation(open);
 
   // Esc 关闭（与详情面板同款契约）
   useEffect(() => {
@@ -67,10 +70,10 @@ export default function OtherTasksPanel({
     }
   }
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   return (
-    <aside className="fb-archive" aria-label="归档任务">
+    <aside className={`fb-archive${closing ? ' closing' : ''}`} aria-label="归档任务">
       <header className="d-hd">
         <span className="d-id">归档 {archived.length > 0 ? `· ${archived.length}` : ''}</span>
         <span className="sp" />

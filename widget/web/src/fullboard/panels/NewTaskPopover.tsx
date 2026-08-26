@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react';
 import { invoke } from '../../lib/tauri';
 import { PRI_LABEL, STATUS_LABEL } from '../../lib/types';
 import { loadBoardData } from '../api';
+import { useExitAnimation } from '../hooks/useExitAnimation';
 
 export default function NewTaskPopover({
   open,
@@ -21,6 +22,8 @@ export default function NewTaskPopover({
   const dueRef = useRef<HTMLInputElement>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // 退出：菜单类快速淡出（100ms，低于抽屉 120——面板越小退得越快）
+  const { mounted, closing } = useExitAnimation(open, 100);
 
   // 打开时清空表单并聚焦标题
   useEffect(() => {
@@ -59,10 +62,10 @@ export default function NewTaskPopover({
     }
   }
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   return (
-    <div className="fb-newtask" data-testid="newtask-popover">
+    <div className={`fb-newtask${closing ? ' closing' : ''}`} data-testid="newtask-popover">
       <input
         ref={titleRef}
         className="fb-newtask-title"

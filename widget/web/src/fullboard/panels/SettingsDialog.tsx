@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '../../lib/tauri';
 import { showToast } from '../../lib/toast';
+import { useExitAnimation } from '../hooks/useExitAnimation';
 
 export interface ReleaseInfo {
   tag: string;
@@ -39,6 +40,8 @@ export default function SettingsDialog({
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [check, setCheck] = useState<CheckState>({ kind: 'idle' });
   const dialogRef = useRef<HTMLDivElement>(null);
+  // 退出与详情抽屉同语言：closing 120ms 后卸载（overlay + dialog 同步退出）
+  const { mounted, closing } = useExitAnimation(open);
 
   // 打开时拉版本 + 自启态；静默检查已有结果则直接呈现
   useEffect(() => {
@@ -95,16 +98,16 @@ export default function SettingsDialog({
     }
   }
 
-  if (!open) return null;
+  if (!mounted) return null;
 
   return (
     <div
-      className="fb-dialog-overlay"
+      className={`fb-dialog-overlay${closing ? ' closing' : ''}`}
       onMouseDown={(e) => {
         if (!dialogRef.current?.contains(e.target as Node)) onClose();
       }}
     >
-      <div className="fb-dialog" ref={dialogRef} role="dialog" aria-modal="true" aria-label="设置">
+      <div className={`fb-dialog${closing ? ' closing' : ''}`} ref={dialogRef} role="dialog" aria-modal="true" aria-label="设置">
         <header className="fb-dialog-hd">
           <span className="t">设置</span>
           <span className="sp" />
