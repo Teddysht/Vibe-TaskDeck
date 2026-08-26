@@ -3837,6 +3837,7 @@ dependencies = [
  "tauri-plugin-autostart",
  "tauri-plugin-notification",
  "tauri-plugin-opener",
+ "tauri-winrt-notification",
  "uuid",
  "windows-sys 0.59.0",
 ]

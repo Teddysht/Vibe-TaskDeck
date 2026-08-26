@@ -16,6 +16,9 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 uuid = { version = "1", features = ["v4"] }
 base64 = "0.22"
 tauri-plugin-notification = "2.3.3"
+# 通知点击路由：插件层未暴露 Activated 回调，Windows toast 直连底层
+# （同版本号复用插件已编译的 0.7.3，不增加构建产物）
+tauri-winrt-notification = "0.7"
 tauri-plugin-autostart = "2.5.1"
 tauri-plugin-opener = "2"
 # 版本检查：GitHub Releases API（rustls 免 OpenSSL 系统依赖；

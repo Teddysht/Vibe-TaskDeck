@@ -72,6 +72,26 @@ fn show_main_window(app: &tauri::AppHandle) {
     }
 }
 
+/// Windows：把挂件 AUMID 注册进 HKCU（DisplayName + IconUri）。
+/// AUMID 未注册时 WinRT 的 Show() 不报错，但系统静默丢弃整条 toast
+/// （开发模式直接跑 exe、未经安装器时必然未注册）。幂等（/f 覆盖），
+/// 失败静默——只影响通知横幅的来源名/图标，不阻塞启动。
+#[cfg(target_os = "windows")]
+fn ensure_aumid_registered(identifier: &str) {
+    use std::os::windows::process::CommandExt;
+    let key = format!(r"HKCU\SOFTWARE\Classes\AppUserModelId\{identifier}");
+    let _ = std::process::Command::new("reg")
+        .args(["add", &key, "/v", "DisplayName", "/t", "REG_SZ", "/d", "Vibe TaskDeck", "/f"])
+        .creation_flags(0x0800_0000) // CREATE_NO_WINDOW：静默，不闪控制台
+        .status();
+    if let Ok(exe) = std::env::current_exe() {
+        let _ = std::process::Command::new("reg")
+            .args(["add", &key, "/v", "IconUri", "/t", "REG_SZ", "/d", &exe.to_string_lossy(), "/f"])
+            .creation_flags(0x0800_0000)
+            .status();
+    }
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -122,6 +142,10 @@ fn main() {
                     }
                 }
             }
+
+            // 通知前置：注册 AUMID，否则系统 toast 被静默丢弃（见函数注释）
+            #[cfg(target_os = "windows")]
+            ensure_aumid_registered(&app.config().identifier);
 
             // 纯客户端数据层：直连 SQLite（与 taskctl-local / server 模式共享同一库）
             let conn = db::open_database()?;

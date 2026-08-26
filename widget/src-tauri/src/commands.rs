@@ -68,20 +68,25 @@ pub fn load_data(app: AppHandle, db: State<Db>) -> Result<serde_json::Value, db:
 }
 
 /// 系统通知 diff（见 main.rs NotifyBaseline 注释）。
-/// 只在「上次不是该状态、这次是」时弹——同任务多次轮询同状态不重复打扰。
+/// 弹报条件：本次为需人介入状态（in_review/blocked）且与上次快照不同——
+/// 上次不存在（基线后新增的任务，含 AI 直接以 in_review 落库）同样算
+/// 「新进入」，修复旧逻辑 unwrap_or(false) 对新任务的静默吞掉。
+/// 归档任务不弹（archivedAt 非空已在 current 收集时剔除，恢复归档时
+/// prev 仍保有旧状态 → 不重复弹）。
 fn notify_status_changes(app: &AppHandle, data: &serde_json::Value) {
     use std::collections::HashMap;
-    use tauri_plugin_notification::NotificationExt;
 
     let Some(tasks) = data.get("tasks").and_then(|t| t.as_array()) else { return };
-    let mut current: HashMap<String, (String, String)> = HashMap::new(); // id → (status, title)
+    // id → (status, title)，含归档（基线口径：全集状态，弹报时才过滤）
+    let mut current: HashMap<String, (String, String, bool)> = HashMap::new();
     for task in tasks {
         if let (Some(id), Some(status), Some(title)) = (
             task.get("id").and_then(|v| v.as_str()),
             task.get("status").and_then(|v| v.as_str()),
             task.get("title").and_then(|v| v.as_str()),
         ) {
-            current.insert(id.to_string(), (status.to_string(), title.to_string()));
+            let archived = task.get("archivedAt").map(|v| !v.is_null()).unwrap_or(false);
+            current.insert(id.to_string(), (status.to_string(), title.to_string(), archived));
         }
     }
 
@@ -89,29 +94,78 @@ fn notify_status_changes(app: &AppHandle, data: &serde_json::Value) {
     let mut guard = baseline.0.lock().unwrap();
     let Some(prev) = guard.as_ref() else {
         // 首次：建基线不弹
-        *guard = Some(current.into_iter().map(|(k, (s, _))| (k, s)).collect());
+        *guard = Some(current.into_iter().map(|(k, (s, _, _))| (k, s)).collect());
         return;
     };
 
-    for (id, (status, title)) in &current {
-        let notify = match status.as_str() {
-            "in_review" => Some(("任务待评审", "待你验收")),
-            "blocked" => Some(("任务被阻塞", "需要你介入")),
-            _ => None,
+    for item in diff_notify_items(prev, &current) {
+        show_actionable_toast(app, &item);
+    }
+    *guard = Some(current.into_iter().map(|(k, (s, _, _))| (k, s)).collect());
+}
+
+/// 一次弹报（纯数据，供 diff 单测与发送分离）。
+struct NotifyItem {
+    task_id: String,
+    title: String,
+    head: &'static str,
+    action: &'static str,
+}
+
+/// diff 纯函数：prev(id→status 基线) vs current(id→(status,title,archived))。
+fn diff_notify_items(
+    prev: &std::collections::HashMap<String, String>,
+    current: &std::collections::HashMap<String, (String, String, bool)>,
+) -> Vec<NotifyItem> {
+    let mut out = Vec::new();
+    for (id, (status, title, archived)) in current {
+        if *archived {
+            continue;
+        }
+        let (head, action) = match status.as_str() {
+            "in_review" => ("任务待评审", "待你验收"),
+            "blocked" => ("任务被阻塞", "需要你介入"),
+            _ => continue,
         };
-        // 上次不存在或状态不同，且本次是需要人介入的状态 → 弹
-        if let Some((head, action)) = notify {
-            if prev.get(id).map(|old| old != status).unwrap_or(false) {
-                let _ = app
-                    .notification()
-                    .builder()
-                    .title(head)
-                    .body(format!("{title} — {action}"))
-                    .show();
-            }
+        // 新进入该状态：上次不存在（新任务直落）或状态不同
+        if prev.get(id).map(|old| old != status).unwrap_or(true) {
+            out.push(NotifyItem {
+                task_id: id.clone(),
+                title: title.clone(),
+                head,
+                action,
+            });
         }
     }
-    *guard = Some(current.into_iter().map(|(k, (s, _))| (k, s)).collect());
+    out
+}
+
+/// 弹带点击路由的 Windows toast：点击（正文或按钮）→ 聚焦挂件窗口 +
+/// emit notification-click{taskId} → 前端展开面板并打开该任务详情。
+/// 直连 tauri-winrt-notification（插件层未暴露 Activated 回调）；
+/// AUMID 与插件同源（tauri identifier）。show() 内含 10ms sleep，
+/// 跑在命令线程（非 UI 主线程），不阻塞窗口。
+fn show_actionable_toast(app: &AppHandle, item: &NotifyItem) {
+    use tauri::Emitter;
+    use tauri_winrt_notification::Toast;
+
+    let app_id = app.config().identifier.clone();
+    let task_id = item.task_id.clone();
+    let app = app.clone(); // on_activated 回调要求 'static，取所有权
+    let _ = Toast::new(&app_id)
+        .title(item.head)
+        .text2(&format!("{} — {}", item.title, item.action))
+        .on_activated(move |_args| {
+            // 点击通知：唤起窗口（可能已隐藏驻留托盘）并路由任务 id 给前端
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+            let _ = app.emit("notification-click", serde_json::json!({ "taskId": task_id }));
+            Ok(())
+        })
+        .show();
 }
 
 /// 新建任务（挂件表单）
@@ -573,4 +627,52 @@ pub async fn open_release_page(url: String) -> Result<(), String> {
 #[tauri::command]
 pub fn broadcast_theme(app: AppHandle, mode: String) {
     let _ = app.emit("theme-changed", mode);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::HashMap;
+
+    type Cur = std::collections::HashMap<String, (String, String, bool)>;
+    fn cur(entries: &[(&str, &str, &str, bool)]) -> Cur {
+        entries
+            .iter()
+            .map(|(id, status, title, archived)| (id.to_string(), (status.to_string(), title.to_string(), *archived)))
+            .collect()
+    }
+
+    // diff_notify_items：通知弹报决策（plans/014 通知动作闭环）
+    #[test]
+    fn notify_diff_new_task_landing_in_review_fires() {
+        // 旧逻辑 unwrap_or(false) 静默吞掉的场景：基线后新增、直接 in_review
+        let prev: HashMap<String, String> = HashMap::new();
+        let current = cur(&[("t1", "in_review", "AI 交付", false)]);
+        let items = diff_notify_items(&prev, &current);
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].task_id, "t1");
+        assert_eq!(items[0].head, "任务待评审");
+    }
+
+    #[test]
+    fn notify_diff_status_transition_fires_once() {
+        let prev = HashMap::from([("t1".to_string(), "in_progress".to_string())]);
+        let current = cur(&[("t1", "blocked", "卡住", false)]);
+        assert_eq!(diff_notify_items(&prev, &current).len(), 1);
+        // 同状态二次轮询：基线已是 blocked → 不再弹
+        let prev2 = HashMap::from([("t1".to_string(), "blocked".to_string())]);
+        assert_eq!(diff_notify_items(&prev2, &current).len(), 0);
+    }
+
+    #[test]
+    fn notify_diff_archived_and_normal_states_skip() {
+        let prev: HashMap<String, String> = HashMap::new();
+        let current = cur(&[
+            ("t1", "in_review", "归档的", true),   // 归档不弹
+            ("t2", "todo", "普通", false),         // 非介入状态不弹
+            ("t3", "done", "完成", false),
+        ]);
+        assert!(diff_notify_items(&prev, &current).is_empty());
+    }
+
 }

@@ -12,6 +12,7 @@
  * ============================================================ */
 import { useEffect, useState } from 'react';
 import { loadData, setSize } from './lib/api';
+import { listen } from './lib/tauri';
 import { SIZES } from './lib/types';
 import { useAppStore } from './store/useAppStore';
 import { usePolling } from './hooks/usePolling';
@@ -60,6 +61,30 @@ export default function App() {
     const raf = requestAnimationFrame(() => requestAnimationFrame(() => setPhase('mini')));
     return () => cancelAnimationFrame(raf);
   }, [phase]); // eslint-disable-line react-hooks/exhaustive-deps -- setView 稳定引用
+
+  // 通知点击路由（Rust toast on_activated → emit）：展开面板直达该任务详情。
+  // 与 onExpand 同路径（setView → expand 相位 → setSize），详情覆盖态由
+  // openDetail 置入；面板已展开时仅切详情不重播展开动画（expand 效果幂等）
+  useEffect(() => {
+    let un: (() => void) | null = null;
+    let cancelled = false;
+    listen('notification-click', (e) => {
+      const taskId = (e.payload as { taskId?: string } | null)?.taskId;
+      if (!taskId) return;
+      useAppStore.getState().setView('large');
+      useAppStore.getState().openDetail(taskId);
+      setPhase('expand');
+    })
+      .then((u) => {
+        if (cancelled) u();
+        else un = u;
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+      un?.();
+    };
+  }, []);
 
   // Esc：详情 → 来源视图（详情输入框聚焦时也生效）
   useEffect(() => {
