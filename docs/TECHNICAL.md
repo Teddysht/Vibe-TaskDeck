@@ -163,7 +163,7 @@ $env:WIDGET_CDP_PORT=8490; node run-all.mjs
 cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
 ```
 
-- mock 层：注入 `__TAURI_INTERNALS__` 内存版 invoke（含 version 计数器模拟冲突）；**契约是 DOM id/类名**（`#viewToggle` / `.fb-card` 等），改前端需同步断言。
+- mock 层：注入 `__TAURI_INTERNALS__` 内存版 invoke（含 version 计数器模拟冲突）；**契约是 DOM id/类名**（`#viewToggle` / `.fb-card` 等），改前端需同步断言。详情就地编辑契约集中在 `p2-detail-verify.mjs`（16 断言：`#dTitle/#dTitleInput`、`#dDesc/#dDescEdit`、`#dPri/#dPriMenu[data-p]`、`#dDue/#dDueInput/#dDueClear`，非受控输入——e2e 直接设 value 后派发 keydown/change）。
 - 真实层：CDP 连真实挂件，验证 SQLite 往返与双窗口事件同步；fullboard target 按 URL 含 `fullboard.html` 匹配。
 - 历史教训：mock 数据字段与真实 `load_data` 曾不一致掩盖缺字段问题——改 mock 数据时逐一核对真实返回。
 
