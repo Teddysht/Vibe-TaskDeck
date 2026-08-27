@@ -1375,8 +1375,9 @@ pub fn delete_task(conn: &Connection, id: &str, version: i64) -> Result<Value, C
     }
 }
 
-/// 附件 id 安全校验：UUID 格式（构造性免疫路径穿越；返回规范路径段）
-fn sanitize_attachment_id(id: &str) -> Option<&str> {
+/// 附件 id 安全校验：UUID 格式（构造性免疫路径穿越；返回规范路径段）。
+/// pub(crate) 级：taskctl.rs 下载入口按同口径校验 operand（对齐 Node isAttachmentId）
+pub fn sanitize_attachment_id(id: &str) -> Option<&str> {
     let ok = id.len() == 36
         && id.bytes().enumerate().all(|(i, b)| match i {
             8 | 13 | 18 | 23 => b == b'-',
@@ -1580,8 +1581,9 @@ pub fn relations_of(conn: &Connection, id: &str) -> Value {
     json!({ "parent": parent, "blocks": blocks, "blockedBy": blocked_by, "related": related })
 }
 
-/// 附件目录（与上游同位：<数据目录>/attachments；构造性安全——只存 UUID 文件名）
-fn attachments_dir() -> Option<std::path::PathBuf> {
+/// 附件目录（与上游同位：<数据目录>/attachments；构造性安全——只存 UUID 文件名）。
+/// pub(crate) 级：taskctl.rs 的附件上传/下载共用同一目录（挂件/CLI 同根互通）
+pub fn attachments_dir() -> Option<std::path::PathBuf> {
     let data_dir = std::env::var("VIBE_TASKDECK_DATA_DIR")
         .ok()
         .map(|s| s.trim().to_string())
@@ -1685,6 +1687,261 @@ pub fn attachments_of(conn: &Connection, task_id: &str) -> Vec<Value> {
         return Vec::new();
     };
     rows.filter_map(|r| r.ok()).collect()
+}
+
+/* ============================================================
+ * CLI 口径（taskctl.rs 专用）——评论/附件簇。
+ *
+ * 与 cli/database.mjs 的同名方法逐字对齐：错误码/消息（英文）、输出形状
+ * （Node #commentJson / createAttachment）。与上面挂件 GUI 函数
+ * （add_comment / upload_attachment 等）互不影响——GUI 归属本地用户 +
+ * WIDGET_THREAD_ID，CLI 归属 AI actor + 显式 thread_id；老函数挂件在用不动。
+ * 评论增删改不写活动流（对齐 Node createComment「不写活动流」与上游）。
+ * ============================================================ */
+
+/// CLI 评论全字段行（输出形状对齐 Node #commentJson）
+struct CommentRow {
+    id: String,
+    task_id: String,
+    body: String,
+    thread_id: Option<String>,
+    author_type: String,
+    author_id: String,
+    author_name: String,
+    author_avatar_url: Option<String>,
+    version: i64,
+    created_at: String,
+    updated_at: String,
+}
+
+fn comment_row(conn: &Connection, id: &str) -> rusqlite::Result<Option<CommentRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, task_id, body, thread_id, author_type, author_id, author_name,
+                author_avatar_url, version, created_at, updated_at
+         FROM comments WHERE id = ?1",
+    )?;
+    let mut rows = stmt.query_map(rusqlite::params![id], |row| {
+        Ok(CommentRow {
+            id: row.get(0)?,
+            task_id: row.get(1)?,
+            body: row.get(2)?,
+            thread_id: row.get(3)?,
+            author_type: row.get(4)?,
+            author_id: row.get(5)?,
+            author_name: row.get(6)?,
+            author_avatar_url: row.get(7)?,
+            version: row.get(8)?,
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+        })
+    })?;
+    match rows.next() {
+        Some(row) => Ok(Some(row?)),
+        None => Ok(None),
+    }
+}
+
+fn comment_to_json(c: &CommentRow) -> Value {
+    json!({
+        "id": c.id,
+        "taskId": c.task_id,
+        "body": c.body,
+        "threadId": c.thread_id,
+        "authorType": c.author_type,
+        "authorId": c.author_id,
+        "authorName": c.author_name,
+        "authorAvatarUrl": c.author_avatar_url,
+        "version": c.version,
+        "createdAt": c.created_at,
+        "updatedAt": c.updated_at,
+    })
+}
+
+/// 任务定位（CLI 附件前置校验等）：id 或 identifier 均可（对齐 Node #taskRow）
+pub fn task_id_cli(conn: &Connection, id: &str) -> Option<String> {
+    get_task_columns(conn, id).ok().flatten().map(|t| t.id)
+}
+
+/// 评论列表（CLI 口径）：ORDER BY created_at, rowid——tiebreaker 对齐本文件
+/// issue_detail 与 Node listComments 的确定性偏离（同毫秒连发顺序稳定）
+pub fn list_comments_cli(conn: &Connection, task_id: &str) -> Result<Vec<Value>, CommandError> {
+    let owner = task_id_cli(conn, task_id)
+        .ok_or_else(|| CommandError::new("TASK_NOT_FOUND", format!("Task '{task_id}' does not exist")))?;
+    let mut stmt = conn.prepare(
+        "SELECT id, task_id, body, thread_id, author_type, author_id, author_name,
+                author_avatar_url, version, created_at, updated_at
+         FROM comments WHERE task_id = ?1 ORDER BY created_at, rowid",
+    )?;
+    let rows = stmt.query_map(rusqlite::params![owner], |row| {
+        Ok(CommentRow {
+            id: row.get(0)?,
+            task_id: row.get(1)?,
+            body: row.get(2)?,
+            thread_id: row.get(3)?,
+            author_type: row.get(4)?,
+            author_id: row.get(5)?,
+            author_name: row.get(6)?,
+            author_avatar_url: row.get(7)?,
+            version: row.get(8)?,
+            created_at: row.get(9)?,
+            updated_at: row.get(10)?,
+        })
+    })?;
+    Ok(rows.filter_map(|r| r.ok()).map(|c| comment_to_json(&c)).collect())
+}
+
+/// 发表评论（CLI 口径）：actor 参数化（AI agent）+ thread_id 显式归属；
+/// body trim 非空校验；不写活动流（对齐 Node createComment）
+pub fn create_comment_cli(
+    conn: &Connection,
+    task_id: &str,
+    body: &str,
+    thread_id: &str,
+    actor: (&str, &str, &str),
+) -> Result<Value, CommandError> {
+    let owner = task_id_cli(conn, task_id)
+        .ok_or_else(|| CommandError::new("TASK_NOT_FOUND", format!("Task '{task_id}' does not exist")))?;
+    if body.trim().is_empty() {
+        return Err(CommandError::new("INVALID_FIELD", "'body' cannot be empty"));
+    }
+    let id = uuid::Uuid::new_v4().to_string();
+    let timestamp = now_iso();
+    conn.execute(
+        "INSERT INTO comments (
+           id, task_id, body, thread_id, thread_codex_project_id, thread_codex_project_kind,
+           thread_codex_host_id, thread_workspace_path,
+           author_type, author_id, author_name, author_avatar_url,
+           version, created_at, updated_at
+         ) VALUES (?1, ?2, ?3, ?4, NULL, NULL, NULL, NULL, ?5, ?6, ?7, NULL, 1, ?8, ?8)",
+        rusqlite::params![id, owner, body.trim(), thread_id, actor.0, actor.1, actor.2, timestamp],
+    )?;
+    comment_row(conn, &id)?
+        .as_ref()
+        .map(comment_to_json)
+        .ok_or_else(|| CommandError::new("DB_ERROR", "创建后读取评论失败"))
+}
+
+/// 更新评论（CLI 口径）：乐观锁（version 不匹配 → VERSION_CONFLICT）；
+/// body trim 非空；thread_id 随写覆盖（CLI 强制显式）
+pub fn update_comment_cli(
+    conn: &Connection,
+    comment_id: &str,
+    version: i64,
+    body: &str,
+    thread_id: &str,
+) -> Result<Value, CommandError> {
+    let current = comment_row(conn, comment_id)?
+        .ok_or_else(|| CommandError::new("COMMENT_NOT_FOUND", format!("Comment '{comment_id}' does not exist")))?;
+    if body.trim().is_empty() {
+        return Err(CommandError::new("INVALID_FIELD", "'body' cannot be empty"));
+    }
+    let timestamp = now_iso();
+    let updated = conn.execute(
+        "UPDATE comments SET body = ?1, thread_id = ?2, version = version + 1, updated_at = ?3
+         WHERE id = ?4 AND version = ?5",
+        rusqlite::params![body.trim(), thread_id, timestamp, current.id, version],
+    )?;
+    if updated != 1 {
+        return Err(CommandError::new(
+            "VERSION_CONFLICT",
+            "Task was modified by another session; reload and retry with the current version",
+        ));
+    }
+    comment_row(conn, &current.id)?
+        .as_ref()
+        .map(comment_to_json)
+        .ok_or_else(|| CommandError::new("DB_ERROR", "更新后读取评论失败"))
+}
+
+/// 删除评论（CLI 口径）：乐观锁；不存在 COMMENT_NOT_FOUND
+pub fn delete_comment_cli(conn: &Connection, comment_id: &str, version: i64) -> Result<(), CommandError> {
+    let current = comment_row(conn, comment_id)?
+        .ok_or_else(|| CommandError::new("COMMENT_NOT_FOUND", format!("Comment '{comment_id}' does not exist")))?;
+    let deleted = conn.execute(
+        "DELETE FROM comments WHERE id = ?1 AND version = ?2",
+        rusqlite::params![current.id, version],
+    )?;
+    if deleted != 1 {
+        return Err(CommandError::new(
+            "VERSION_CONFLICT",
+            "Task was modified by another session; reload and retry with the current version",
+        ));
+    }
+    Ok(())
+}
+
+/// 评论定位（attachment upload --comment 前置校验）：不存在返回 None
+pub fn get_comment_cli(conn: &Connection, comment_id: &str) -> Option<Value> {
+    comment_row(conn, comment_id).ok().flatten().as_ref().map(comment_to_json)
+}
+
+/// 附件元数据入库（CLI 口径，对齐 Node createAttachment：--comment 时
+/// task_id 从评论行派生；filename 非空 ≤255；磁盘文件由 CLI 层先行写好）
+pub fn create_attachment_cli(
+    conn: &Connection,
+    id: &str,
+    task_id: Option<&str>,
+    comment_id: Option<&str>,
+    filename: &str,
+    content_type: &str,
+    size: i64,
+) -> Result<Value, CommandError> {
+    if filename.is_empty() || filename.chars().count() > 255 {
+        return Err(CommandError::new(
+            "INVALID_FIELD",
+            "'filename' must be a non-empty string of at most 255 characters",
+        ));
+    }
+    if size < 0 {
+        return Err(CommandError::new("INVALID_FIELD", "'size' must be a non-negative integer"));
+    }
+    let (owner_task_id, owner_comment_id) = match comment_id {
+        Some(cid) => {
+            let comment = comment_row(conn, cid)?
+                .ok_or_else(|| CommandError::new("COMMENT_NOT_FOUND", format!("Comment '{cid}' does not exist")))?;
+            (comment.task_id, Some(comment.id))
+        }
+        None => {
+            let tid = task_id.unwrap_or_default();
+            let owner = task_id_cli(conn, tid)
+                .ok_or_else(|| CommandError::new("TASK_NOT_FOUND", format!("Task '{tid}' does not exist")))?;
+            (owner, None)
+        }
+    };
+    let timestamp = now_iso();
+    conn.execute(
+        "INSERT INTO attachments (id, task_id, comment_id, filename, content_type, size, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![id, owner_task_id, owner_comment_id, filename, content_type, size, timestamp],
+    )?;
+    Ok(json!({
+        "id": id,
+        "filename": filename,
+        "contentType": content_type,
+        "size": size,
+        "createdAt": timestamp,
+    }))
+}
+
+/// 附件元数据查询（CLI 口径；磁盘文件是否在由 CLI 层核查）
+pub fn get_attachment_cli(conn: &Connection, id: &str) -> Option<Value> {
+    conn.query_row(
+        "SELECT id, task_id, comment_id, filename, content_type, size, created_at
+         FROM attachments WHERE id = ?1",
+        rusqlite::params![id],
+        |row| {
+            Ok(json!({
+                "id": row.get::<_, String>(0)?,
+                "taskId": row.get::<_, String>(1)?,
+                "commentId": row.get::<_, Option<String>>(2)?,
+                "filename": row.get::<_, String>(3)?,
+                "contentType": row.get::<_, String>(4)?,
+                "size": row.get::<_, i64>(5)?,
+                "createdAt": row.get::<_, String>(6)?,
+            }))
+        },
+    )
+    .ok()
 }
 
 /// 项目 id → identifier 前缀（对齐 upstream projectPrefix：大写、剔非字母数字、截 12）
@@ -2444,6 +2701,116 @@ mod tests {
         // 删除后不可读
         delete_attachment(&conn, &att_id).unwrap();
         assert_eq!(read_attachment(&conn, &att_id).unwrap_err().code, "ATTACHMENT_NOT_FOUND");
+    }
+
+    /* ==== CLI 口径（comment/attachment 簇）：actor 参数化 / 乐观锁 / 契约形状 ==== */
+
+    const CLI_ACTOR: (&str, &str, &str) = ("agent", "codex-agent", "Codex Agent");
+
+    #[test]
+    fn create_comment_cli_actor_thread_and_shape() {
+        let conn = test_db();
+        let task = create_task(&conn, "CLI 评论任务", "todo", "none", None, &local_user_actor()).unwrap();
+        let id = task["id"].as_str().unwrap().to_string();
+        // actor 参数化：agent 身份 + 显式 thread_id + 全字段输出形状
+        let comment = create_comment_cli(&conn, &id, "  CLI 评论  ", "th-cli", CLI_ACTOR).unwrap();
+        assert_eq!(comment["body"], "CLI 评论");
+        assert_eq!(comment["taskId"], id);
+        assert_eq!(comment["threadId"], "th-cli");
+        assert_eq!(comment["authorType"], "agent");
+        assert_eq!(comment["authorId"], "codex-agent");
+        assert_eq!(comment["authorName"], "Codex Agent");
+        assert_eq!(comment["authorAvatarUrl"], Value::Null);
+        assert_eq!(comment["version"], 1);
+        assert!(comment["createdAt"].as_str().is_some());
+        assert!(comment["updatedAt"].as_str().is_some());
+        // 空/纯空白 body 拒绝；任务不存在；identifier 寻址可用
+        assert_eq!(create_comment_cli(&conn, &id, "   ", "t", CLI_ACTOR).unwrap_err().code, "INVALID_FIELD");
+        assert_eq!(create_comment_cli(&conn, "no-such", "x", "t", CLI_ACTOR).unwrap_err().code, "TASK_NOT_FOUND");
+        assert!(create_comment_cli(&conn, "LOCAL-1", "identifier 寻址", "t", CLI_ACTOR).is_ok());
+    }
+
+    #[test]
+    fn list_comments_cli_orders_and_resolves_identifier() {
+        let conn = test_db();
+        let task = create_task(&conn, "列表任务", "todo", "none", None, &local_user_actor()).unwrap();
+        let id = task["id"].as_str().unwrap().to_string();
+        let first = create_comment_cli(&conn, &id, "第一条", "t", CLI_ACTOR).unwrap();
+        let second = create_comment_cli(&conn, &id, "第二条", "t", CLI_ACTOR).unwrap();
+        // 按 identifier 寻址列出，rowid tiebreaker 保证插入序
+        let comments = list_comments_cli(&conn, "LOCAL-1").unwrap();
+        assert_eq!(comments.len(), 2);
+        assert_eq!(comments[0]["id"], first["id"]);
+        assert_eq!(comments[1]["id"], second["id"]);
+        // 每条都是全字段形状（含 threadId/authorId/authorAvatarUrl）
+        assert_eq!(comments[0]["threadId"], "t");
+        assert_eq!(comments[0]["authorId"], "codex-agent");
+        assert_eq!(comments[0]["authorAvatarUrl"], Value::Null);
+        assert_eq!(list_comments_cli(&conn, "no-such").unwrap_err().code, "TASK_NOT_FOUND");
+    }
+
+    #[test]
+    fn update_and_delete_comment_cli_optimistic_lock() {
+        let conn = test_db();
+        let task = create_task(&conn, "乐观锁任务", "todo", "none", None, &local_user_actor()).unwrap();
+        let id = task["id"].as_str().unwrap().to_string();
+        let comment = create_comment_cli(&conn, &id, "原内容", "t1", CLI_ACTOR).unwrap();
+        let cid = comment["id"].as_str().unwrap().to_string();
+        // 更新：version 递增、body trim、thread_id 覆盖
+        let updated = update_comment_cli(&conn, &cid, 1, "  新内容  ", "t2").unwrap();
+        assert_eq!(updated["version"], 2);
+        assert_eq!(updated["body"], "新内容");
+        assert_eq!(updated["threadId"], "t2");
+        // 过期 version → VERSION_CONFLICT；空 body 拒绝；评论不存在
+        assert_eq!(update_comment_cli(&conn, &cid, 1, "x", "t").unwrap_err().code, "VERSION_CONFLICT");
+        assert_eq!(update_comment_cli(&conn, &cid, 2, "  ", "t").unwrap_err().code, "INVALID_FIELD");
+        assert_eq!(update_comment_cli(&conn, "no-such", 1, "x", "t").unwrap_err().code, "COMMENT_NOT_FOUND");
+        // 删除：version 2 成功；再删（行已无）→ COMMENT_NOT_FOUND；过期 → VERSION_CONFLICT
+        delete_comment_cli(&conn, &cid, 2).unwrap();
+        assert_eq!(delete_comment_cli(&conn, &cid, 2).unwrap_err().code, "COMMENT_NOT_FOUND");
+        let other = create_comment_cli(&conn, &id, "另一条", "t", CLI_ACTOR).unwrap();
+        let oid = other["id"].as_str().unwrap().to_string();
+        assert_eq!(delete_comment_cli(&conn, &oid, 9).unwrap_err().code, "VERSION_CONFLICT");
+    }
+
+    #[test]
+    fn create_attachment_cli_derives_task_from_comment() {
+        let conn = test_db();
+        let task = create_task(&conn, "附件任务", "todo", "none", None, &local_user_actor()).unwrap();
+        let id = task["id"].as_str().unwrap().to_string();
+        let comment = create_comment_cli(&conn, &id, "带附件的评论", "t", CLI_ACTOR).unwrap();
+        let cid = comment["id"].as_str().unwrap().to_string();
+        let uuid = uuid::Uuid::new_v4().to_string();
+        // --comment：task_id 从评论行派生 + comment_id 落库
+        let by_comment = create_attachment_cli(&conn, &uuid, None, Some(&cid), "a.txt", "text/plain", 3).unwrap();
+        assert_eq!(by_comment["id"], uuid);
+        assert_eq!(by_comment["filename"], "a.txt");
+        assert_eq!(by_comment["contentType"], "text/plain");
+        assert_eq!(by_comment["size"], 3);
+        let stored = get_attachment_cli(&conn, &uuid).unwrap();
+        assert_eq!(stored["taskId"], id);
+        assert_eq!(stored["commentId"], cid);
+        // --task（identifier 寻址）：comment_id 为 null
+        let uuid2 = uuid::Uuid::new_v4().to_string();
+        create_attachment_cli(&conn, &uuid2, Some("LOCAL-1"), None, "b.png", "image/png", 0).unwrap();
+        let stored2 = get_attachment_cli(&conn, &uuid2).unwrap();
+        assert_eq!(stored2["taskId"], id);
+        assert_eq!(stored2["commentId"], Value::Null);
+        // 校验：filename 空/超 255；评论/任务不存在
+        assert_eq!(create_attachment_cli(&conn, &uuid, Some(&id), None, "", "t", 1).unwrap_err().code, "INVALID_FIELD");
+        assert_eq!(
+            create_attachment_cli(&conn, &uuid, Some(&id), None, &"x".repeat(256), "t", 1).unwrap_err().code,
+            "INVALID_FIELD"
+        );
+        assert_eq!(
+            create_attachment_cli(&conn, &uuid, None, Some("no-such"), "a", "t", 1).unwrap_err().code,
+            "COMMENT_NOT_FOUND"
+        );
+        assert_eq!(
+            create_attachment_cli(&conn, &uuid, Some("no-such"), None, "a", "t", 1).unwrap_err().code,
+            "TASK_NOT_FOUND"
+        );
+        assert!(get_attachment_cli(&conn, "no-such").is_none());
     }
 
     #[test]
