@@ -22,7 +22,7 @@ Vibe-TaskDeck 的本地化封装与增强。让任务追踪成为 AI 工作流�
 
 ## Operating Context
 
-> 来源注：本项目 fork 自 dashi-taskboard（chuspeeism，Apache 2.0）的封装层，自研全版看板后挂件已零 upstream 运行时依赖；`cli/taskctl-local.mjs` 仍复用其 TaskboardDatabase（本地 `upstream/` 目录，不入库——迁移到独立仓库时由使用者自行放置或等待 CLI 重写为 Rust 同语义层）。
+> 来源注：本项目 fork 自 dashi-taskboard（chuspeeism，Apache 2.0）的封装层，自研全版看板后挂件已零 upstream 运行时依赖；taskctl 亦已零依赖——v0.4.0 起主路径为挂件 exe 内置 Rust 同语义层（`widget/src-tauri/src/taskctl.rs`，直连挂件 `db.rs`），Node 回退脚本的数据层也已自研（`cli/database.mjs` + `cli/domain.mjs`）。本地 `upstream/` 目录仅保留语义参考用途，不入库。
 
 - **运行形态**：Windows 桌面（Tauri 2 置顶无边框挂件，280×48 胶囊 ↔ 360×520 面板 ↔ 全版看板第二窗口），日常无 Node 服务、无端口、无浏览器。
 - **三级信息架构**（安静 → 召唤 → 深潜）：L1 胶囊（常驻扫一眼）→ L2 挂件面板（列表/新建/流转）→ L3 深看。L3 双轨：
@@ -31,16 +31,16 @@ Vibe-TaskDeck 的本地化封装与增强。让任务追踪成为 AI 工作流�
 - **纯客户端模式**（挂件 Rust 直连 SQLite + taskctl Node 直连，同库 WAL 并发）——**单机全功能是承诺**。server/云端模式不在当前范围（历史语义参考，见 PRODUCT.md「来源」）。
 - **数据**：单一 `taskboard.sqlite`；`VIBE_TASKDECK_DATA_DIR` 决定位置（默认 `<repo>/.data`）。
 - **AI 侧协议**：SKILL.md 定义的工作流——开工前 `issue get` + `comment list`、认领用 `--if-version` 乐观锁、完成后评论 + 流转 `in_review`、仅用户明确接受才 `done`；每个写操作须带稳定 `--thread-id`。
-- **任务模型**（上游定义）：7 状态（backlog → todo → in_progress → in_review → done，另有 blocked / canceled）、5 优先级、标签、截止日期、评论、活动流、（云端/服务模式下）关联与附件。
+- **任务模型**（上游定义）：7 状态（backlog → todo → in_progress → in_review → done，另有 blocked / canceled）、5 优先级、标签、截止日期、评论、活动流、关联与附件（v0.3.5 起本地模式已支持）。
 
 ## Capabilities and Constraints
 
-- **已实现**：纯客户端挂件（内嵌页面 + rusqlite 数据层 + 内建新建表单 + 流转按钮 + 事件广播 + 5 秒轮询兜底感知外部写入）；**状态通知闭环（2026-08-26）**：外部流转进 in_review/blocked 弹系统 toast，点击直达任务详情（含 AUMID 启动自注册，免安装直跑可用）；**面板详情就地编辑（2026-08-26，v0.3.2）**：挂件面板详情内标题/描述/优先级/截止日点击即改（`update_task` 乐观并发 + 冲突重试，编辑失败不丢输入），外部修改经 `task-updated` 事件即时刷新（不再等轮询）；**详情标签编辑（2026-08-26，v0.3.3）**：详情内标签小节支持项目标签库勾选/取消与新标签入库（`add_label` 自动合并项目标签库，菜单文档流展开窄窗不裁切）；**详情评论闭环（2026-08-27，v0.3.4）**：挂件面板详情评论列表/空态/发送（按钮+Enter）全链路 e2e 断言补齐（功能自 v0.3.0 移植即在，本轮收口测试覆盖），L3-本机「详情+评论」深看闭环完成；**taskctl 关联与附件封装（2026-08-27，v0.3.5）**：`issue relation add/remove`、`attachment upload/download` 本地模式落地（写语义对齐挂件 db.rs 同库一致，CLI 输出契约对齐上游 taskctl），AI 会话内可完整操作关联与附件，cli-smoke 契约套件 39 断言全绿；自研全版看板（七列拖拽/详情编辑/筛选/列表/归档/undo，React 19 + Tailwind v4 + shadcn 主题层）；**UI 统一精修（2026-08-25）**：全版看板无框自绘标题栏（与挂件同窗口语言）、三端统一暗色细滚动条、详情抽屉 <1280px 浮层化响应式、亮/暗双主题（localStorage > 系统偏好 > 暗色，html 内联防闪）；taskctl 本地直连（输出契约与上游完全一致：schemaVersion:2 JSON、退出码 0/2/3/4/5）；`clean --purge-data` 等清理边界。
+- **已实现**：纯客户端挂件（内嵌页面 + rusqlite 数据层 + 内建新建表单 + 流转按钮 + 事件广播 + 5 秒轮询兜底感知外部写入）；**状态通知闭环（2026-08-26）**：外部流转进 in_review/blocked 弹系统 toast，点击直达任务详情（含 AUMID 启动自注册，免安装直跑可用）；**面板详情就地编辑（2026-08-26，v0.3.2）**：挂件面板详情内标题/描述/优先级/截止日点击即改（`update_task` 乐观并发 + 冲突重试，编辑失败不丢输入），外部修改经 `task-updated` 事件即时刷新（不再等轮询）；**详情标签编辑（2026-08-26，v0.3.3）**：详情内标签小节支持项目标签库勾选/取消与新标签入库（`add_label` 自动合并项目标签库，菜单文档流展开窄窗不裁切）；**详情评论闭环（2026-08-27，v0.3.4）**：挂件面板详情评论列表/空态/发送（按钮+Enter）全链路 e2e 断言补齐（功能自 v0.3.0 移植即在，本轮收口测试覆盖），L3-本机「详情+评论」深看闭环完成；**taskctl 关联与附件封装（2026-08-27，v0.3.5）**：`issue relation add/remove`、`attachment upload/download` 本地模式落地（写语义对齐挂件 db.rs 同库一致，CLI 输出契约对齐上游 taskctl），AI 会话内可完整操作关联与附件，cli-smoke 契约套件 39 断言全绿；**AI 能力包封装进应用（2026-08-27，v0.4.0）**：挂件 exe 双模式——`taskdeck-widget.exe taskctl ...` 直接执行全部 taskctl 命令（Rust 实现与挂件 GUI 同一份 db.rs，同库不分裂从约定变成物理事实），AI 用户装一个 exe 即拥有 GUI + CLI 全部能力，零 Node 依赖（Node 脚本降级为契约基准与回退路径）；自研全版看板（七列拖拽/详情编辑/筛选/列表/归档/undo，React 19 + Tailwind v4 + shadcn 主题层）；**UI 统一精修（2026-08-25）**：全版看板无框自绘标题栏（与挂件同窗口语言）、三端统一暗色细滚动条、详情抽屉 <1280px 浮层化响应式、亮/暗双主题（localStorage > 系统偏好 > 暗色，html 内联防闪）；taskctl 本地直连（输出契约与上游完全一致：schemaVersion:2 JSON、退出码 0/2/3/4/5）；`clean --purge-data` 等清理边界。
 - **未实现 / 待决**：
   - taskctl 本地模式不支持 cloud / project map（纯客户端无 server，语义不适用）；
   - AI Chat / Workflow / Gantt / Jira / 云同步 / 多项目（明确不做）；
   - 上游云端无账号体系与群组权限（共享密码信任模型），"同实例内按人隔离" 需二次开发，定位为**不在当前范围**。
-- **硬约束**：挂件页面为编译期嵌入（改前端需 npm run build → cargo build 两步）；node:sqlite 要求 Node ≥ 22.5；Windows 平台（进程锁、文件句柄行为均按 Windows 语义处理）。
+- **硬约束**：挂件页面为编译期嵌入（改前端需 npm run build → cargo build 两步）；taskctl 走 exe 双模式后无 Node 依赖，仅 Node 回退路径要求 Node ≥ 22.5（node:sqlite）；Windows 平台（进程锁、文件句柄行为均按 Windows 语义处理）。
 
 ## Brand Commitments
 

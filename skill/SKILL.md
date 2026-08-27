@@ -7,7 +7,7 @@ description: 本地试用 Vibe-TaskDeck 任务看板（纯客户端）。用于�
 
 这是一个**本地、可撤销**的试用 Skill。它不修改 Unity 业务代码，不安装全局依赖，也不接管已有的 taskboard 进程。
 
-**纯客户端架构**：桌面挂件（Tauri 内嵌页面 + Rust 直连 SQLite）与 taskctl（Node 直连 SQLite）共用同一数据库文件（WAL 模式），互相同步；不需要启动任何 HTTP 服务，也不打开浏览器。数据默认存于 `<repo>/.data/taskboard.sqlite`（可用 `VIBE_TASKDECK_DATA_DIR` 覆盖）。
+**纯客户端架构**：桌面挂件（Tauri 内嵌页面 + Rust 直连 SQLite）与 taskctl 共用同一数据库文件（WAL 模式），互相同步；不需要启动任何 HTTP 服务，也不打开浏览器。数据默认存于 `<repo>/.data/taskboard.sqlite`（可用 `VIBE_TASKDECK_DATA_DIR` 覆盖）。v0.4.0 起 taskctl 优先走挂件 exe 的 **CLI 双模式**（`taskdeck-widget.exe taskctl ...`，Rust 实现与挂件同库同语义，零 Node 依赖）；exe 未构建时自动回退 Node 脚本（`cli/taskctl-local.mjs`，需 Node 22.5+）。两者输出契约完全一致（schemaVersion:2 JSON + 退出码 0/2/3/4/5）。
 
 ## 快速使用
 
@@ -31,8 +31,8 @@ python skill/taskboard.py clean --keep-data
 
 ## 前置条件
 
-- Node.js `22.5+`（taskctl 本地模式依赖 `node:sqlite`）。
-- 挂件：需要 Rust 工具链构建 exe（见下）。
+- 挂件：需要 Rust 工具链构建 exe（见下）。exe 构建后 taskctl 走 exe 双模式，**无 Node 依赖**。
+- 仅在 exe 未构建、回退 Node 脚本时需要 Node.js `22.5+`（`node:sqlite`）。
 
 ## 桌面挂件（纯客户端）
 
@@ -55,7 +55,7 @@ cd src-tauri; cargo build --release --target x86_64-pc-windows-msvc
 ## 数据位置与互通
 
 - 数据库：`VIBE_TASKDECK_DATA_DIR`（taskboard.py 自动设为 `<repo>/.data`）下的 `taskboard.sqlite`；挂件独立运行（不经 taskboard.py）时默认 `%APPDATA%\Vibe-TaskDeck`。
-- 双端同库：挂件（Rust）与 taskctl-local（Node）都以 WAL + busy_timeout=5000 打开同一文件，可并发读写。
+- 双端同库：挂件与 taskctl（exe 直连或 Node 回退）都以 WAL + busy_timeout=5000 打开同一文件，可并发读写。
 
 ## 任务状态与优先级
 

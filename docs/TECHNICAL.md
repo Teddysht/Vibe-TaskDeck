@@ -183,6 +183,14 @@ cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
 | `VIBE_TASKDECK_WIDGET_DIR` / `VIBE_TASKDECK_WIDGET_EXE` | 挂件源码目录 / 可执行文件路径 | `widget/` 自动探测 |
 | `WEBVIEW2_CDP_PORT` | WebView2 CDP 调试端口（端到端测试用） | 不设 |
 
+## exe 双模式 CLI（v0.4.0）
+
+挂件 exe 兼作 taskctl：`argv[1] == "taskctl"` 时不初始化 WebView，走 `src/taskctl.rs` 分支直连 db.rs 后退出。要点：
+
+- **stdio**：release 构建 `windows_subsystem="windows"` 无控制台，进程常无有效 std 句柄——`cli_stdio()` 按 GetStdHandle（父进程管道）→ AttachConsole+CONOUT$（终端直调）解析显式写入器；句柄继承模式（如 Python subprocess 无 capture）实测会静默丢输出，调用方应显式管道捕获（taskboard.py 即如此）。
+- **契约**：输出/校验/退出码逐字对齐 `cli/taskctl-local.mjs`（Node 版保持为契约基准与回退路径，cli-smoke 39 断言 + cli-rs 两套件 99 断言钉住）。
+- **GUI 零回归**：create_task/move_task/update_task 等扩展 actor 参数，挂件调用点显式传 LOCAL_USER_ACTOR，行为不变；GUI 窄形状输出走新函数（task_full_json 宽形状仅 CLI 用）。
+
 ## 已知技术债
 
 - ~~`cli/taskctl-local.mjs` 依赖本地 `upstream/`（不入库）的 `TaskboardDatabase`~~ 已清偿（2026-08-26）：数据层自研为 `cli/database.mjs` + `cli/domain.mjs`（node:sqlite，DDL/PRAGMA/乐观锁/活动流语义对齐 `widget/src-tauri/src/db.rs`），克隆即可用；`upstream/` 仅保留本地语义参考用途。
