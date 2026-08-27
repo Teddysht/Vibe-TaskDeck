@@ -979,6 +979,12 @@ export class TaskboardDatabase {
     return rows.map((row) => this.#commentJson(row));
   }
 
+  /** 评论详情（attachment upload --comment 前置校验等）：不存在返回 null */
+  getComment(commentId) {
+    const row = this.#commentRow(commentId);
+    return row ? this.#commentJson(row) : null;
+  }
+
   #commentRow(commentId) {
     return this.#db.prepare("SELECT * FROM comments WHERE id = ?").get(commentId);
   }
@@ -996,6 +1002,64 @@ export class TaskboardDatabase {
       version: row.version,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
+    };
+  }
+
+  /* ============================================================
+   * 附件（纯 DB：元数据入库/查询；内容磁盘读写由 CLI 层负责，
+   * 与类内既有职责划分一致——本层除构造器建库目录外不触碰文件系统）
+   * ============================================================ */
+
+  /**
+   * 附件元数据入库。调用点：db.createAttachment({ id, taskId, commentId, filename,
+   * contentType, size, createdAt })。id/createdAt 由 CLI 生成（磁盘文件名 = id，
+   * 须先写盘后入库，顺序对齐 db.rs #upload_attachment）。
+   * 校验对齐 db.rs：--task 时任务必须存在（TASK_NOT_FOUND）；--comment 时评论必须
+   * 存在（COMMENT_NOT_FOUND）且 task_id 落评论所属任务；文件名非空 ≤255（INVALID_FIELD）。
+   */
+  createAttachment({ id, taskId, commentId, filename, contentType, size, createdAt }) {
+    if (typeof filename !== "string" || filename.length === 0 || filename.length > 255) {
+      throw new ApiError(400, "INVALID_FIELD", "'filename' must be a non-empty string of at most 255 characters");
+    }
+    if (!Number.isSafeInteger(size) || size < 0) {
+      throw new ApiError(400, "INVALID_FIELD", "'size' must be a non-negative integer");
+    }
+    let ownerTaskId;
+    let ownerCommentId = null;
+    if (commentId !== undefined && commentId !== null) {
+      const comment = this.#commentRow(commentId);
+      if (!comment) {
+        throw new ApiError(404, "COMMENT_NOT_FOUND", `Comment '${commentId}' does not exist`);
+      }
+      ownerTaskId = comment.task_id;
+      ownerCommentId = comment.id;
+    } else {
+      ownerTaskId = this.#requireTaskRow(taskId).id;
+    }
+    const timestamp = createdAt ?? new Date().toISOString();
+    this.#db
+      .prepare(
+        `INSERT INTO attachments (id, task_id, comment_id, filename, content_type, size, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(id, ownerTaskId, ownerCommentId, filename, contentType, size, timestamp);
+    return { id, filename, contentType, size, createdAt: timestamp };
+  }
+
+  /** 附件元数据查询：不存在返回 null（磁盘文件是否在由 CLI 层核查） */
+  getAttachment(attachmentId) {
+    const row = this.#db
+      .prepare("SELECT id, task_id, comment_id, filename, content_type, size, created_at FROM attachments WHERE id = ?")
+      .get(attachmentId);
+    if (!row) return null;
+    return {
+      id: row.id,
+      taskId: row.task_id,
+      commentId: row.comment_id,
+      filename: row.filename,
+      contentType: row.content_type,
+      size: row.size,
+      createdAt: row.created_at,
     };
   }
 
