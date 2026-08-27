@@ -164,6 +164,7 @@ cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
 ```
 
 - mock 层：注入 `__TAURI_INTERNALS__` 内存版 invoke（含 version 计数器模拟冲突）；**契约是 DOM id/类名**（`#viewToggle` / `.fb-card` 等），改前端需同步断言。详情就地编辑契约集中在 `p2-detail-verify.mjs`（20 断言：`#dTitle/#dTitleInput`、`#dDesc/#dDescEdit`、`#dPri/#dPriMenu[data-p]`、`#dDue/#dDueInput/#dDueClear`、`#dLabels/#dLabelMenu/#dLabelInput[data-label]`，非受控输入——e2e 直接设 value 后派发 keydown/change）。
+- UI 间距/裁切验收（v0.4.0 详情对齐）：契约断言之外用一次性几何脚本（getBoundingClientRect 量 title→act→meta/小节间距 + 标签菜单 `position:static` 与输入框完整高度）钉住视觉口径，随发版手工跑（临时脚本不入库）。
 - 真实层：CDP 连真实挂件，验证 SQLite 往返与双窗口事件同步；fullboard target 按 URL 含 `fullboard.html` 匹配。
 - 历史教训：mock 数据字段与真实 `load_data` 曾不一致掩盖缺字段问题——改 mock 数据时逐一核对真实返回。
 
