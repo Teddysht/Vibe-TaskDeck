@@ -45,12 +45,15 @@ jobs:
           npm ci
 
       # tag 注解 → Release 标题（subject）与正文（body）；subject 拼接成
-      # 「vX.Y.Z — 主题」对齐既有 Release 命名惯例
+      # 「vX.Y.Z — 主题」对齐既有 Release 命名惯例。
+      # 注意：checkout 默认 fetch-depth:1 不拉注解 tag 对象（ref 退化为轻量
+      # tag，%(contents:*) 会读到 commit message），须先显式 fetch tag 本体
       - name: 提取 tag 注解为更新说明
         id: tagmsg
         shell: bash
         run: |
           TAG="${GITHUB_REF_NAME}"
+          git fetch --force origin "refs/tags/${TAG}:refs/tags/${TAG}"
           SUBJ=$(git tag -l --format='%(contents:subject)' "$TAG")
           {
             echo "subject=$SUBJ"
