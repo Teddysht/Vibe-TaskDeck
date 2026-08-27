@@ -213,9 +213,11 @@ html.light .large .hd .mark .bm-dark-group{display:none}
 .detail .d-hd .d-st.in_progress{color:var(--accent-hover);background:var(--accent-soft)}
 .detail .d-hd .d-st.blocked{color:var(--danger-soft);background:var(--danger-bg)}
 .detail .d-hd .d-st.done{color:var(--success);background:var(--success-bg,var(--bg-surface-2))}
-.detail .d-scroll{flex:1;overflow-y:auto;padding:14px 14px 8px;display:flex;flex-direction:column;gap:10px}
-.detail .d-title{font-size:var(--font-lg);font-weight:600;line-height:1.35;color:var(--text-primary);overflow-wrap:anywhere}
-.detail .d-act{display:flex;gap:6px;flex-wrap:wrap;margin-top:-2px}
+/* v0.3.6 信息结构对齐 fullboard 原型：垂直节奏交给元素 margin（原型小节口径
+   18/8），容器不再用统一 gap 一刀切——title→act→meta 紧凑、小节间有呼吸 */
+.detail .d-scroll{flex:1;overflow-y:auto;padding:14px 14px 10px;display:flex;flex-direction:column}
+.detail .d-title{font-size:var(--font-lg);font-weight:600;line-height:1.4;color:var(--text-primary);overflow-wrap:anywhere;margin-bottom:10px}
+.detail .d-act{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
 .detail .d-act:empty{display:none}
 .detail .d-act button{font-size:var(--font-sm);padding:5px 12px;border-radius:var(--radius-sm);border:1px solid var(--border-strong);background:var(--bg-surface-3);color:var(--text-secondary);cursor:pointer;font-weight:500;font-family:inherit;white-space:nowrap;transition:background var(--duration-fast) var(--ease-out),color var(--duration-fast) var(--ease-out),border-color var(--duration-fast) var(--ease-out),transform var(--duration-fast) var(--ease-out)}
 .detail .d-act button:active{transform:scale(.97)}
@@ -223,7 +225,11 @@ html.light .large .hd .mark .bm-dark-group{display:none}
 .detail .d-act button.primary{background:var(--accent);border-color:transparent;color:var(--text-inverse)}
 .detail .d-act button.primary:hover{background:var(--accent-hover)}
 .detail .d-act button:disabled{opacity:.55;cursor:default}
-.detail .d-meta{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:var(--font-xs);color:var(--text-weak);font-variant-numeric:tabular-nums}
+/* meta 行（原型口径：icon + 文字，项间距 4/12，底部留分隔） */
+.detail .d-meta{display:flex;flex-wrap:wrap;align-items:center;gap:4px 12px;font-size:var(--font-xs);color:var(--text-weak);font-variant-numeric:tabular-nums;padding-bottom:2px}
+.detail .d-meta .d-meta-item{display:inline-flex;align-items:center;gap:5px;min-width:0}
+.detail .d-meta .d-meta-item svg{width:12px;height:12px;color:var(--text-weak);flex:0 0 auto}
+.detail .d-meta .d-meta-labels-sum{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}
 .detail .d-meta .overdue{color:var(--danger-soft);font-weight:600}
 .detail .d-meta .agent{color:var(--accent-hover)}
 /* M3 元信息就地编辑：已有值 chip（虚线下划线暗示可点）与缺失值「+」入口 */
@@ -243,21 +249,22 @@ html.light .large .hd .mark .bm-dark-group{display:none}
 .detail .d-due-edit input[type="date"]:focus{outline:none;border-color:var(--border-hover)}
 .detail .d-due-edit button{border:none;background:transparent;color:var(--text-weak);font-size:var(--font-sm);cursor:pointer;padding:0 2px;line-height:1}
 .detail .d-due-edit button:hover{color:var(--danger-soft)}
-.detail .d-desc{font-size:var(--font-sm);line-height:1.55;color:var(--text-secondary);white-space:pre-wrap;overflow-wrap:anywhere;padding:10px 11px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-surface-2);cursor:text}
-.detail .d-desc:hover{border-color:var(--border-strong);transition:border-color var(--duration-fast) var(--ease-out)}
-.detail .d-desc.d-desc-add{color:var(--text-weak);cursor:pointer}
-.detail .d-desc.d-desc-add:hover{color:var(--text-secondary)}
+/* 描述：纯文本排版（原型口径，无卡片底）；空态 dashed 提示可点 */
+.detail .d-desc{font-size:var(--font-sm);line-height:1.65;color:var(--text-secondary);white-space:pre-wrap;overflow-wrap:anywhere;padding:0;cursor:text}
+.detail .d-desc.d-desc-add{color:var(--text-weak);cursor:pointer;border:1px dashed var(--border-strong);border-radius:var(--radius-sm);padding:8px 10px}
+.detail .d-desc.d-desc-add:hover{color:var(--text-secondary);border-color:var(--border-hover)}
 .detail .d-title{cursor:text}
 .detail .d-title:hover{color:var(--text-primary)}
 /* 就地编辑态（v0.3.2）：标题 input / 描述 textarea，与 d-composer input 同一视觉口径 */
-.detail .d-title-input{font-size:var(--font-lg);font-weight:600;line-height:1.35;color:var(--text-primary);overflow-wrap:anywhere;width:100%;padding:2px 4px;margin:-2px -4px;border-radius:var(--radius-sm);border:1px solid var(--accent);background:var(--bg-surface-2);font-family:inherit}
-.detail .d-desc-edit{font-size:var(--font-sm);line-height:1.55;color:var(--text-primary);white-space:pre-wrap;overflow-wrap:anywhere;width:100%;padding:10px 11px;border-radius:var(--radius-md);border:1px solid var(--accent);background:var(--bg-surface-2);font-family:inherit;resize:vertical;min-height:64px}
-.detail .d-sec{font-size:var(--font-xs);font-weight:600;color:var(--text-weak);letter-spacing:.5px;margin-top:2px}
+.detail .d-title-input{font-size:var(--font-lg);font-weight:600;line-height:1.4;color:var(--text-primary);overflow-wrap:anywhere;width:100%;padding:2px 4px;margin:-2px -4px;border-radius:var(--radius-sm);border:1px solid var(--accent);background:var(--bg-surface-2);font-family:inherit}
+.detail .d-desc-edit{font-size:var(--font-sm);line-height:1.65;color:var(--text-primary);white-space:pre-wrap;overflow-wrap:anywhere;width:100%;padding:8px 10px;border-radius:var(--radius-md);border:1px solid var(--accent);background:var(--bg-surface-2);font-family:inherit;resize:vertical;min-height:64px}
+/* 小节头（原型口径：上距 14 下距 8——窄窗较原型 18 略收，保持呼吸但不空旷） */
+.detail .d-sec{display:flex;align-items:center;gap:6px;font-size:var(--font-xs);font-weight:600;color:var(--text-weak);letter-spacing:.5px;margin:14px 0 8px}
 /* M4 标签小节：头行 flex（标题+编辑钮）→ chips 行 → 文档流菜单（窄窗不裁切，对齐 fullboard 口径） */
-.detail .d-sec-labels{display:flex;align-items:center;gap:6px;margin-top:10px}
-.detail .d-sec-labels .d-sec-btn{margin-left:auto;border:none;background:transparent;color:var(--accent-hover);font-size:var(--font-xs);font-family:inherit;cursor:pointer;padding:0}
-.detail .d-sec-labels .d-sec-btn:hover{text-decoration:underline}
-.detail .d-labels{display:flex;gap:5px;flex-wrap:wrap;align-items:center;margin-top:5px}
+.detail .d-sec .d-sec-btn{border:none;background:transparent;color:var(--accent-hover);font-size:var(--font-xs);font-family:inherit;cursor:pointer;padding:0}
+.detail .d-sec .d-sec-btn:hover{text-decoration:underline}
+.detail .d-sec-labels .d-sec-btn{margin-left:auto}
+.detail .d-labels{display:flex;gap:5px;flex-wrap:wrap;align-items:center}
 .detail .d-labels .label-chip{font-size:var(--font-xs);padding:1px 6px;border-radius:var(--radius-xs);background:var(--bg-surface-2);color:var(--text-secondary);white-space:nowrap}
 .detail .d-label-none{font-size:var(--font-sm);color:var(--text-weak)}
 .detail .d-label-menu{display:flex;flex-direction:column;gap:2px;padding:6px;margin-top:6px;border:1px solid var(--border-subtle);border-radius:var(--radius-md);background:var(--bg-surface-2)}

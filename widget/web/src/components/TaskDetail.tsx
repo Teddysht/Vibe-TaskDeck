@@ -7,6 +7,8 @@
  * #dDue（截止 chip）→ #dDueInput（原生 date，空值=清除）+ #dDueClear。
  * M4 标签：#dLabels（chips 行）→ #dLabelMenu（库勾选 + 新建）+
  * #dLabelInput（新标签，Enter 入库并勾选）；菜单文档流展开不裁切。
+ * v0.3.6 信息结构对齐 fullboard 原型：meta 行 icon+文字（含标签摘要）、
+ * 小节节奏（18/8 上下距）、顺序描述→标签、描述纯文本排版。
  * ============================================================ */
 import { useEffect, useRef, useState } from 'react';
 import { addComment, addLabel, loadData, moveTask, refreshDetail, updateTask } from '../lib/api';
@@ -100,7 +102,8 @@ export default function TaskDetail() {
   ) : null;
   if (t.priority && t.priority !== 'none') {
     meta.push(
-      <span key="pri" className="d-pri-wrap">
+      <span key="pri" className="d-meta-item d-pri-wrap">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m3 17 6-6 4 4 8-8" /><path d="M17 7h4v4" /></svg>
         <span id="dPri" role="button" tabIndex={0} className="d-meta-edit" onClick={openPri}>
           {priLabel(t.priority)}优先级
         </span>
@@ -109,7 +112,7 @@ export default function TaskDetail() {
     );
   } else {
     meta.push(
-      <span key="pri" className="d-pri-wrap">
+      <span key="pri" className="d-meta-item d-pri-wrap">
         <span id="dPri" role="button" tabIndex={0} className="d-meta-add" onClick={openPri}>
           + 优先级
         </span>
@@ -117,10 +120,20 @@ export default function TaskDetail() {
       </span>,
     );
   }
+  // 标签摘要（原型口径：meta 行 icon + join 展示，小节内另有 chips 与编辑）
+  if (taskLabels.length > 0) {
+    meta.push(
+      <span key="labels" className="d-meta-item" title={taskLabels.join(' · ')}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20.6 13.4 12 22l-9-9V4a1 1 0 0 1 1-1h9l8.6 8.6a2 2 0 0 1 0 2.8z" /><circle cx="7.5" cy="7.5" r=".5" fill="currentColor" /></svg>
+        <span className="d-meta-labels-sum">{taskLabels.join(' · ')}</span>
+      </span>,
+    );
+  }
   if (dueEdit) {
     // 截止日编辑态：原生 date（UA 日历随 color-scheme 适配主题）；选空/清空 = 清除
     meta.push(
-      <span key="due" className="d-due-edit">
+      <span key="due" className="d-meta-item d-due-edit">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
         <input
           id="dDueInput"
           type="date"
@@ -146,29 +159,35 @@ export default function TaskDetail() {
   } else if (t.dueDate) {
     const over = isOverdue(t.dueDate) && t.status !== 'done' && t.status !== 'canceled';
     meta.push(
-      <span key="due" id="dDue" role="button" tabIndex={0}
-        className={`d-meta-edit${over ? ' overdue' : ''}`}
-        onClick={() => { setDueEdit(true); setPriMenu(false); }}>
-        截止 {shortDate(t.dueDate)}{over ? '（逾期）' : ''}
+      <span key="due" className="d-meta-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
+        <span id="dDue" role="button" tabIndex={0}
+          className={`d-meta-edit${over ? ' overdue' : ''}`}
+          onClick={() => { setDueEdit(true); setPriMenu(false); }}>
+          截止 {shortDate(t.dueDate)}{over ? '（逾期）' : ''}
+        </span>
       </span>,
     );
   } else {
     meta.push(
-      <span key="due" id="dDue" role="button" tabIndex={0} className="d-meta-add"
-        onClick={() => { setDueEdit(true); setPriMenu(false); }}>
-        + 截止日
+      <span key="due" className="d-meta-item">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><rect x="3" y="4" width="18" height="18" rx="2" /><path d="M16 2v4M8 2v4M3 10h18" /></svg>
+        <span id="dDue" role="button" tabIndex={0} className="d-meta-add"
+          onClick={() => { setDueEdit(true); setPriMenu(false); }}>
+          + 截止日
+        </span>
       </span>,
     );
   }
   if (t.creatorType === 'agent') {
-    meta.push(<span key="creator" className="agent">{t.creatorName} 创建</span>);
+    meta.push(<span key="creator" className="d-meta-item agent">{t.creatorName} 创建</span>);
   } else if (t.creatorName && t.creatorName !== '本地用户') {
-    meta.push(<span key="creator">{t.creatorName} 创建</span>);
+    meta.push(<span key="creator" className="d-meta-item">{t.creatorName} 创建</span>);
   }
   if (t.threadId) {
-    meta.push(<span key="thread">会话 {t.threadId}</span>);
+    meta.push(<span key="thread" className="d-meta-item">会话 {t.threadId}</span>);
   }
-  meta.push(<span key="created">建于 {shortTime(t.createdAt)}</span>);
+  meta.push(<span key="created" className="d-meta-item">建于 {shortTime(t.createdAt)}</span>);
 
   // 发表评论：提交 → 事件驱动刷新（refreshDetail 兜底）
   async function submitComment() {
@@ -321,6 +340,43 @@ export default function TaskDetail() {
           ))}
         </div>
         <div className="d-meta" id="dMeta">{meta}</div>
+        {/* 描述小节（原型口径：小节头 + 编辑钮 → 纯文本正文，顺序先于标签） */}
+        <div className="d-sec">
+          描述
+          {editing !== 'desc' && (
+            <button className="d-sec-btn" onClick={() => setEditing('desc')}>编辑</button>
+          )}
+        </div>
+        {editing === 'desc' ? (
+          <textarea
+            id="dDescEdit"
+            ref={descEditRef}
+            className="d-desc-edit"
+            defaultValue={t.description ?? ''}
+            maxLength={4000}
+            rows={3}
+            autoFocus
+            onBlur={() => setEditing(null)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                saveEdit('desc', e.currentTarget.value);
+              }
+              if (e.key === 'Escape') {
+                e.stopPropagation(); // 先退出编辑，不冒泡给 App 级 Esc（会关详情）
+                setEditing(null);
+              }
+            }}
+          />
+        ) : t.description && t.description.trim() ? (
+          <div className="d-desc" id="dDesc" title="点击编辑描述" onClick={() => setEditing('desc')}>
+            {t.description}
+          </div>
+        ) : (
+          <div className="d-desc d-desc-add" id="dDesc" role="button" tabIndex={0} onClick={() => setEditing('desc')}>
+            + 补充描述
+          </div>
+        )}
         {/* M4 标签小节：头行（标题+编辑）→ chips → 文档流菜单（360px 窄窗不裁切，对齐 fullboard 口径） */}
         <div className="d-sec d-sec-labels">
           标签 {taskLabels.length > 0 ? taskLabels.length : ''}
@@ -355,36 +411,6 @@ export default function TaskDetail() {
                 }}
               />
             </div>
-          </div>
-        )}
-        {editing === 'desc' ? (
-          <textarea
-            id="dDescEdit"
-            ref={descEditRef}
-            className="d-desc-edit"
-            defaultValue={t.description ?? ''}
-            maxLength={4000}
-            rows={3}
-            autoFocus
-            onBlur={() => setEditing(null)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                saveEdit('desc', e.currentTarget.value);
-              }
-              if (e.key === 'Escape') {
-                e.stopPropagation(); // 先退出编辑，不冒泡给 App 级 Esc（会关详情）
-                setEditing(null);
-              }
-            }}
-          />
-        ) : t.description && t.description.trim() ? (
-          <div className="d-desc" id="dDesc" title="点击编辑描述" onClick={() => setEditing('desc')}>
-            {t.description}
-          </div>
-        ) : (
-          <div className="d-desc d-desc-add" id="dDesc" role="button" tabIndex={0} onClick={() => setEditing('desc')}>
-            + 补充描述
           </div>
         )}
         <div className="d-sec" id="dSec">评论 {comments.length}</div>
