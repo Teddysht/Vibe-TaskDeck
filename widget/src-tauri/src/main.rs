@@ -2,6 +2,7 @@
 
 mod commands;
 mod db;
+mod taskctl;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -92,7 +93,47 @@ fn ensure_aumid_registered(identifier: &str) {
     }
 }
 
+/// CLI 模式控制台附着：windows_subsystem="windows" 的 release exe 无控制台，
+/// AttachConsole(ATTACH_PARENT_PROCESS) 挂到调用方终端，再把 CONOUT$/
+/// CONERR$ 设回进程 std 句柄，println!/eprintln! 才有去处。cmd/PowerShell
+/// 直接调用可见。管道重定向（AI 子进程捕获 stdout）时 AttachConsole 失败
+/// 属预期——句柄已由父进程提供，直接写即可。
+#[cfg(target_os = "windows")]
+fn attach_console_for_cli() {
+    use std::os::windows::io::AsRawHandle;
+    const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
+    unsafe {
+        if windows_sys::Win32::System::Console::AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
+            if let Ok(out) = std::fs::OpenOptions::new().write(true).open("CONOUT$") {
+                windows_sys::Win32::System::Console::SetStdHandle(
+                    windows_sys::Win32::System::Console::STD_OUTPUT_HANDLE,
+                    out.as_raw_handle(),
+                );
+            }
+            if let Ok(err) = std::fs::OpenOptions::new().write(true).open("CONOUT$") {
+                windows_sys::Win32::System::Console::SetStdHandle(
+                    windows_sys::Win32::System::Console::STD_ERROR_HANDLE,
+                    err.as_raw_handle(),
+                );
+            }
+            // Rust std 在首次使用时才惰性获取句柄：SetStdHandle 发生在任何
+            // println! 之前即生效（main 里 CLI 分支最早执行，满足此前提）
+        }
+    }
+}
+
 fn main() {
+    // exe 双模式：argv[1] == "taskctl" 时走 CLI 分支（AI 任务命令），
+    // 不初始化 WebView/托盘，直接处理命令后退出——AI 能力封装进应用本体。
+    let argv: Vec<String> = std::env::args().skip(1).collect();
+    if argv.first().map(String::as_str) == Some("taskctl") {
+        // windows_subsystem="windows" 下 release 无控制台：附着父进程控制台
+        // 并重绑 stdio，否则终端/管道收不到输出
+        #[cfg(target_os = "windows")]
+        attach_console_for_cli();
+        std::process::exit(taskctl::run_cli(&argv[1..]));
+    }
+
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(

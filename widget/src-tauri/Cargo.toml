@@ -26,8 +26,9 @@ tauri-plugin-opener = "2"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json", "system-proxy"] }
 
 [target.'cfg(windows)'.dependencies]
-# 左键状态查询（拖拽检测：拖拽中不做位置 clamp，保证跨屏自由拖动）
-windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse"] }
+# 左键状态查询（拖拽检测：拖拽中不做位置 clamp，保证跨屏自由拖动）；
+# Console：CLI 模式 AttachConsole/GetStdHandle（taskctl 双模式入口）
+windows-sys = { version = "0.59", features = ["Win32_UI_Input_KeyboardAndMouse", "Win32_System_Console"] }
 
 [features]
 # custom-protocol：release/正式构建内嵌 frontendDist 产物（tauri 依此判定 dev=false）。
