@@ -106,14 +106,24 @@ taskctl issue update ID [--title/--description/--status/...] [--if-version N]
 taskctl issue move ID --status S [--thread-id ID] [--if-version N]
 taskctl issue archive ID / restore ID
 
+# 关联（type: parent / blocks / blocked_by / related；--issue 为对方任务 id 或 identifier）
+taskctl issue relation add ID --type T --issue OTHER_ID [--thread-id ID] [--if-version N]
+taskctl issue relation remove ID --type T --issue OTHER_ID [--thread-id ID] [--if-version N]
+
 # 评论
 taskctl comment list ISSUE_ID
 taskctl comment add ISSUE_ID --body TEXT [--thread-id ID]
 taskctl comment update COMMENT_ID --body TEXT --if-version N
 taskctl comment delete COMMENT_ID --if-version N
+
+# 附件（upload --task 与 --comment 恰好其一；单文件 ≤10MB；download 落盘到 --output）
+taskctl attachment upload --file PATH --task ID | --comment ID [--content-type TYPE]
+taskctl attachment download ATTACHMENT_ID --output PATH
 ```
 
-**本地模式不支持的命令**（报 `UNSUPPORTED_LOCAL`，退出码 2）：`cloud`、`project map`、`issue relation`、`attachment upload/download`。其中关联与附件可在挂件**全版看板详情面板**中操作（同一直连 SQLite 数据层）。
+**本地模式不支持的命令**（报 `UNSUPPORTED_LOCAL`，退出码 2）：`cloud`、`project map`。
+
+关联写语义与挂件同库一致（parent 单父替换 + 环检测、blocks/blocked_by 方向边、related 字典序去重、RELATION_EXISTS / RELATION_NOT_FOUND、双方 version touch）；附件内容存 `<数据目录>/attachments/<UUID>`（与挂件全版看板详情面板完全互通——CLI 传的附件看板可见，反之亦然）。
 
 所有 taskctl 命令均输出 JSON（可加 `--json` 显式声明契约）。退出码：`0` 成功、`2` 非法输入、`3` 环境不可用、`4` API 错误、`5` 冲突。
 
