@@ -17,6 +17,7 @@ import {
   YAxis,
 } from 'recharts';
 import { PRI_LABEL, STATUS_LABEL, STATUS_ORDER } from '../../lib/types';
+import { localDate } from '../../lib/format';
 import type { Task } from '../../lib/types';
 import { isOverdue, shortDate } from '../../lib/format';
 import { useBoardStore } from '../store/useBoardStore';
@@ -72,25 +73,30 @@ export default function DashboardView({ onGotoColumn }: { onGotoColumn: (status:
     const total = live.length;
     const pct = total === 0 ? 0 : Math.round((done.length / total) * 100);
 
-    // 近 7 天创建 + 完成（双序列面积）
+    // 近 7 天创建 + 完成（双序列面积）。createdAt/completedAt 是 UTC ISO，
+    // 分桶必须换算到本地日期——直接切串会把凌晨的事记到前一天柱子上。
     const now = new Date();
+    const dayKey = (iso?: string | null): string => (iso ? localDate(new Date(iso)) : '');
     const trend: Array<{ day: string; 创建: number; 完成: number }> = [];
     for (let i = 6; i >= 0; i--) {
       const d = new Date(now);
       d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
+      const key = localDate(d);
       trend.push({
         day: `${d.getMonth() + 1}/${d.getDate()}`,
-        创建: live.filter((t) => t.createdAt?.slice(0, 10) === key).length,
-        完成: done.filter((t) => (t as Task & { completedAt?: string }).completedAt?.slice(0, 10) === key).length,
+        创建: live.filter((t) => dayKey(t.createdAt) === key).length,
+        完成: done.filter((t) => dayKey((t as Task & { completedAt?: string }).completedAt) === key).length,
       });
     }
 
-    // 3 天内到期（含逾期）清单
+    // 3 天内到期（含逾期）清单（日期串比较，避免 UTC 解析与时区错位）
+    const horizon = new Date(now);
+    horizon.setDate(horizon.getDate() + 3);
+    const horizonYmd = localDate(horizon);
     const upcoming = live
       .filter((t) => {
         if (t.status === 'done' || t.status === 'canceled' || !t.dueDate) return false;
-        return (new Date(t.dueDate).getTime() - now.getTime()) / 86400000 <= 3;
+        return t.dueDate <= horizonYmd;
       })
       .sort((a, b) => (a.dueDate ?? '').localeCompare(b.dueDate ?? ''))
       .slice(0, 5);

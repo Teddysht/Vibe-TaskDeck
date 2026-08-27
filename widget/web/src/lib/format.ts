@@ -32,20 +32,32 @@ export function shortDate(d: string | null | undefined): string {
   return d ? d.slice(0, 10) : '';
 }
 
-// 今天（YYYY-MM-DD，ISO 字符串可直接比较）；用于逾期判断。
+// Date → 本地时区 YYYY-MM-DD。DB 时间戳是 UTC ISO（带 Z），直接切字符串
+// 在中国时区会慢 8 小时、凌晨 0–8 点日期错一天——凡"日期/今天"一律走本地换算。
+export function localDate(d: Date): string {
+  const mm = `${d.getMonth() + 1}`.padStart(2, '0');
+  const dd = `${d.getDate()}`.padStart(2, '0');
+  return `${d.getFullYear()}-${mm}-${dd}`;
+}
+
+// 今天（本地时区 YYYY-MM-DD，与 dueDate 的日期串可直接比较）；用于逾期判断。
 // 每次调用重算而非模块加载时固化——挂件常驻跨天后逾期判定才会翻转。
 export function today(): string {
-  return new Date().toISOString().slice(0, 10);
+  return localDate(new Date());
 }
 
 export function isOverdue(d: string | null | undefined): boolean {
   return !!d && d < today();
 }
 
-// ISO 时间 → "MM-DD HH:mm"（评论/详情的时间展示；同日只显 HH:mm）
+const pad2 = (n: number): string => `${n}`.padStart(2, '0');
+
+// ISO 时间 → "MM-DD HH:mm"（本地时区；评论/详情的时间展示，同日只显 HH:mm）
 export function shortTime(iso: string | null | undefined): string {
   if (!iso || iso.length < 16) return '';
-  const now = new Date();
-  const sameDay = iso.slice(0, 10) === now.toISOString().slice(0, 10);
-  return sameDay ? iso.slice(11, 16) : `${iso.slice(5, 10)} ${iso.slice(11, 16)}`;
+  const t = new Date(iso);
+  if (Number.isNaN(t.getTime())) return '';
+  const hhmm = `${pad2(t.getHours())}:${pad2(t.getMinutes())}`;
+  const md = `${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
+  return localDate(t) === today() ? hhmm : `${md} ${hhmm}`;
 }
