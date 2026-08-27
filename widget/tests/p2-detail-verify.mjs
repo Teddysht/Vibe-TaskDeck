@@ -5,6 +5,8 @@
 //   3. done 后动作条消失
 //   4. 列表 blocked 文案回归「解除阻塞」（协议收敛后三视图一致）
 //   5. 冲突重试路径：版本过期 → 重读 → 二次成功
+// v0.3.4 M5 评论：列表渲染（AI 作者标记）/ 计数徽章 / 按钮与 Enter 发送
+// 落位 / 输入清空 / 空态（契约 id：#dSec #dComments #dCEmpty #dcInput #dcSend）
 import { spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
@@ -30,6 +32,10 @@ window.__MOCK__ = { tasks: [
   { id: 'T-6', title: '被阻塞项', identifier: 'TSK-6', status: 'blocked',    priority: 'none', dueDate: null, version: 1 },
   { id: 'T-7', title: '已完成项', identifier: 'TSK-7', status: 'done',       priority: 'none', dueDate: null, version: 1 },
 ], projects: [{ id: 'local', name: '本地', labels: ['设计', '紧急修复'] }] };
+// 评论状态（对齐 db.add_comment 契约：trim + 空内容 INVALID_FIELD + 本地用户作者）
+window.__MOCK__.comments = {
+  'T-2': [{ id: 'C-1', body: '开工前已读协议与上下文', authorType: 'agent', authorName: 'Claude 会话', version: 1, createdAt: '2026-08-27T01:00:00.000Z' }],
+};
 window.__TAURI_INTERNALS__ = {
   invoke(cmd, args) {
     if (cmd === 'plugin:event|listen') return Promise.resolve(1);
@@ -38,7 +44,15 @@ window.__TAURI_INTERNALS__ = {
     if (cmd === 'issue_detail') {
       const t = window.__MOCK__.tasks.find(t => t.id === args.id);
       if (!t) return Promise.reject({ code: 'TASK_NOT_FOUND', message: 'gone' });
-      return Promise.resolve({ task: { ...t }, comments: [], activities: [] });
+      return Promise.resolve({ task: { ...t }, comments: window.__MOCK__.comments[t.id] ?? [], activities: [] });
+    }
+    if (cmd === 'add_comment') {
+      const body = (args.body || '').trim();
+      if (!body) return Promise.reject({ code: 'INVALID_FIELD', message: '评论内容不能为空' });
+      const list = window.__MOCK__.comments[args.taskId] ?? (window.__MOCK__.comments[args.taskId] = []);
+      const c = { id: 'C-' + (list.length + 1), body, authorType: 'user', authorName: '本地用户', version: 1, createdAt: new Date().toISOString() };
+      list.push(c);
+      return Promise.resolve(c);
     }
     if (cmd === 'move_task') {
       const t = window.__MOCK__.tasks.find(t => t.id === args.id);
@@ -354,6 +368,74 @@ async function main() {
   }))()`);
   check('P2-2t 取消勾选移除标签', labelOff.chips.join(',') === '紧急修复,里程碑' && labelOff.mock.join(',') === '紧急修复,里程碑',
     JSON.stringify(labelOff));
+
+  // ---- v0.3.4 M5：评论（契约 id：#dSec #dComments #dCEmpty #dcInput #dcSend）----
+  // 展示：T-2 有 1 条 AI 评论 → 列表渲染（agent 标记 + 作者 + 正文）+ 计数徽章 + 空态隐藏
+  const commentsShown = await evalJs(`(() => ({
+    badge: document.getElementById('dSec').textContent,
+    items: [...document.querySelectorAll('#dComments .d-c')].map(c => ({
+      agent: c.classList.contains('agent'),
+      author: c.querySelector('.a').textContent,
+      body: c.querySelector('.b').textContent,
+    })),
+    emptyHidden: document.getElementById('dCEmpty').style.display === 'none',
+  }))()`);
+  check('P2-2u 评论列表渲染 AI 作者标记（#dComments 契约）',
+    commentsShown.badge === '评论 1'
+      && commentsShown.items.length === 1 && commentsShown.items[0].agent === true
+      && commentsShown.items[0].author === 'Claude 会话' && commentsShown.items[0].body === '开工前已读协议与上下文'
+      && commentsShown.emptyHidden === true,
+    JSON.stringify(commentsShown));
+
+  // 发送：#dcInput 输入（非受控，直接设 value）→ 点 #dcSend → 落位本地用户评论、输入清空、徽章 2
+  await evalJs(`(() => {
+    const inp = document.getElementById('dcInput');
+    inp.value = '人工补充的验收口径';
+    document.getElementById('dcSend').click();
+    return 'ok';
+  })()`);
+  await sleep(600);
+  const sent = await evalJs(`(() => ({
+    badge: document.getElementById('dSec').textContent,
+    items: [...document.querySelectorAll('#dComments .d-c')].map(c => ({ author: c.querySelector('.a').textContent, body: c.querySelector('.b').textContent })),
+    inputCleared: document.getElementById('dcInput').value,
+    emptyHidden: document.getElementById('dCEmpty').style.display === 'none',
+  }))()`);
+  check('P2-2v 按钮发送评论落位并清空输入（#dcSend 契约）',
+    sent.badge === '评论 2' && sent.items.length === 2
+      && sent.items[1].author === '本地用户' && sent.items[1].body === '人工补充的验收口径'
+      && sent.inputCleared === '' && sent.emptyHidden === true,
+    JSON.stringify(sent));
+
+  // Enter 发送路径：键盘提交同样落位（徽章 3）
+  await evalJs(`(() => {
+    const inp = document.getElementById('dcInput');
+    inp.value = '回车路径的评论';
+    inp.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    return 'ok';
+  })()`);
+  await sleep(600);
+  const sentEnter = await evalJs(`(() => ({
+    badge: document.getElementById('dSec').textContent,
+    lastBody: [...document.querySelectorAll('#dComments .d-c .b')].pop().textContent,
+    inputCleared: document.getElementById('dcInput').value,
+  }))()`);
+  check('P2-2w Enter 发送路径落位', sentEnter.badge === '评论 3' && sentEnter.lastBody === '回车路径的评论' && sentEnter.inputCleared === '',
+    JSON.stringify(sentEnter));
+
+  // 空态：返回列表切到无评论的 T-4 → #dCEmpty 可见、徽章「评论 0」
+  await evalJs(`document.getElementById('dBack').click(); 'ok'`);
+  await sleep(400);
+  await evalJs(`document.querySelector('#list .item[data-id="T-4"]').click(); 'ok'`);
+  await sleep(500);
+  const emptyState = await evalJs(`(() => ({
+    badge: document.getElementById('dSec').textContent,
+    count: document.querySelectorAll('#dComments .d-c').length,
+    emptyVisible: document.getElementById('dCEmpty').style.display !== 'none',
+  }))()`);
+  check('P2-2x 无评论任务显示空态（#dCEmpty 契约）',
+    emptyState.badge === '评论 0' && emptyState.count === 0 && emptyState.emptyVisible === true,
+    JSON.stringify(emptyState));
 
   // 详情态截图
   const shot = await send('Page.captureScreenshot', { format: 'png' });
