@@ -70,6 +70,14 @@ impl CliError {
     fn api(message: impl Into<String>) -> Self {
         Self { code: "API_ERROR", message: message.into(), exit_code: 4, details: None }
     }
+    /// ApiError 4xx（exit 4）：code/message 逐字对齐 Node apiError(...) 抛出物
+    fn api_code(code: &'static str, message: impl Into<String>) -> Self {
+        Self { code, message: message.into(), exit_code: 4, details: None }
+    }
+    /// 文件 IO 失败（exit 2；对齐 Node TaskctlError FILE_READ/FILE_WRITE_FAILED + details）
+    fn file_io(code: &'static str, message: impl Into<String>, details: String) -> Self {
+        Self { code, message: message.into(), exit_code: 2, details: Some(details) }
+    }
 }
 
 impl From<CommandError> for CliError {
@@ -307,7 +315,263 @@ fn dispatch(conn: &Connection, command: &str, parsed: &Parsed) -> Result<Value, 
             expect_operands(parsed, 0)?;
             Ok(json!({ "projects": db::list_projects(conn) }))
         }
+        "comment list" => {
+            expect_operands(parsed, 1)?;
+            let task_id = require_operand_id(&parsed.operands[0], "issue")?;
+            Ok(json!({ "comments": db::list_comments_cli(conn, task_id)? }))
+        }
+        "comment add" => {
+            expect_operands(parsed, 1)?;
+            // 校验顺序对齐 Node commentAdd：thread-id → issue id → body
+            let thread_id = thread_id_for_comment(parsed)?;
+            let task_id = require_operand_id(&parsed.operands[0], "issue")?;
+            let body = required_option(parsed, "body")?;
+            let (actor_id, actor_name) = parsed.actor();
+            let comment =
+                db::create_comment_cli(conn, task_id, &body, &thread_id, ("agent", &actor_id, &actor_name))?;
+            Ok(json!({ "comment": comment }))
+        }
+        "comment update" => {
+            expect_operands(parsed, 1)?;
+            // 校验顺序对齐 Node commentUpdate：thread-id → if-version → comment id → body
+            let thread_id = thread_id_for_comment(parsed)?;
+            let version = explicit_version(parsed)?;
+            let comment_id = require_operand_id(&parsed.operands[0], "comment")?;
+            let body = required_option(parsed, "body")?;
+            Ok(json!({ "comment": db::update_comment_cli(conn, comment_id, version, &body, &thread_id)? }))
+        }
+        "comment delete" => {
+            expect_operands(parsed, 1)?;
+            // 对齐上游：删除也要 thread-id；校验顺序 thread-id → if-version → comment id
+            thread_id_for_comment(parsed)?;
+            let version = explicit_version(parsed)?;
+            let comment_id = require_operand_id(&parsed.operands[0], "comment")?;
+            db::delete_comment_cli(conn, comment_id, version)?;
+            // 对齐 HTTP 204 空响应：taskctl 原样输出仅含 schemaVersion 的 JSON
+            Ok(json!({}))
+        }
+        "attachment upload" => attachment_upload(conn, parsed),
+        "attachment download" => {
+            expect_operands(parsed, 1)?;
+            attachment_download(conn, &parsed.operands[0], parsed)
+        }
         // M3 迁移中：未实现的命令先落 here（CLI 骨架先行，命令逐簇补齐）
         _ => Err(CliError::api(format!("Command '{command}' not yet implemented in widget CLI"))),
     }
+}
+
+/* ==== comment + attachment 簇（M3-B；契约逐字对齐 cli/taskctl-local.mjs） ==== */
+
+/// --thread-id 解析（完整校验，对齐 Node resolveThreadId：显式选项 > env，
+/// trim 非空、≤256 字符）。取值链复用 M2 的 Parsed::thread_id（显式 > env），
+/// 其缺失文案与 Node 不同——在此按 Node 契约重写；空白/长度校验为 Node 独有
+fn thread_id_for_comment(parsed: &Parsed) -> Result<String, CliError> {
+    let raw = parsed.thread_id().map_err(|_| {
+        CliError::usage("Codex conversation attribution requires --thread-id or CODEX_THREAD_ID")
+    })?;
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err(CliError::usage(
+            "Codex conversation attribution requires --thread-id or CODEX_THREAD_ID",
+        ));
+    }
+    if trimmed.chars().count() > 256 {
+        return Err(CliError::usage("--thread-id and CODEX_THREAD_ID cannot exceed 256 characters"));
+    }
+    Ok(trimmed.to_string())
+}
+
+/// --if-version（comment update/delete 专用）：必填正整数（对齐 Node
+/// explicitVersion）。评论写端点与 issue 簇不同——上游强制显式版本，
+/// 不做「缺省自动取当前」
+fn explicit_version(parsed: &Parsed) -> Result<i64, CliError> {
+    let Some(raw) = parsed.opt("if-version") else {
+        return Err(CliError::usage("Missing required option --if-version"));
+    };
+    match raw.parse::<i64>() {
+        Ok(v) if v >= 1 => Ok(v),
+        _ => Err(CliError::usage("--if-version must be a positive integer")),
+    }
+}
+
+/// 必填选项（对齐 Node requiredOption：缺失或空串均报 usage 错误）
+fn required_option(parsed: &Parsed, name: &str) -> Result<String, CliError> {
+    match parsed.opt(name) {
+        Some(v) if !v.is_empty() => Ok(v.to_string()),
+        _ => Err(CliError::usage(format!("Missing required option --{name}"))),
+    }
+}
+
+/// 位置参数 id 非空校验（对齐 Node requireIssueId / requireCommentId）
+fn require_operand_id<'a>(value: &'a str, kind: &str) -> Result<&'a str, CliError> {
+    if value.is_empty() {
+        return Err(CliError::usage(format!("Missing {kind} id")));
+    }
+    Ok(value)
+}
+
+/// 相对路径以进程 cwd 解析（对齐 Node resolveInputPath = path.resolve(cwd, value)）
+fn resolve_input_path(value: &str) -> std::path::PathBuf {
+    let path = std::path::Path::new(value);
+    if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().unwrap_or_default().join(path)
+    }
+}
+
+/// 扩展名 → Content-Type（移植上游 taskctl.mjs #guessContentType，
+/// 与 Node 版映射及默认值逐字一致）
+fn guess_content_type(filename: &str) -> &'static str {
+    let ext = std::path::Path::new(filename)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "svg" => "image/svg+xml",
+        "md" => "text/markdown",
+        "txt" => "text/plain",
+        "json" => "application/json",
+        "pdf" => "application/pdf",
+        "html" | "htm" => "text/html",
+        _ => "application/octet-stream",
+    }
+}
+
+/// 附件目录（复用 db::attachments_dir：VIBE_TASKDECK_DATA_DIR > APPDATA，
+/// 与挂件同根互通）；不可定位对齐 Node SERVICE_UNAVAILABLE（exit 3）
+fn attachments_dir_or_unavailable() -> Result<std::path::PathBuf, CliError> {
+    db::attachments_dir().ok_or_else(|| CliError {
+        code: "SERVICE_UNAVAILABLE",
+        message: "Cannot locate the taskboard data directory. Set VIBE_TASKDECK_DATA_DIR.".into(),
+        exit_code: 3,
+        details: None,
+    })
+}
+
+fn file_write_failed(path: &std::path::Path, error: &std::io::Error) -> CliError {
+    CliError::file_io(
+        "FILE_WRITE_FAILED",
+        format!("Cannot write attachment file: {}", path.to_string_lossy()),
+        error.to_string(),
+    )
+}
+
+/// attachment upload：--task 与 --comment 恰好其一；先读源文件、先校验目标
+/// 存在，后写盘（UUID 文件名）入库——顺序逐字对齐 Node attachmentUpload
+fn attachment_upload(conn: &Connection, parsed: &Parsed) -> Result<Value, CliError> {
+    let task_opt = parsed.opt("task").map(str::to_string);
+    let comment_opt = parsed.opt("comment").map(str::to_string);
+    if task_opt.is_some() == comment_opt.is_some() {
+        return Err(CliError::usage("attachment upload requires exactly one of --task or --comment"));
+    }
+
+    let file_path = resolve_input_path(&required_option(parsed, "file")?);
+    let file_str = file_path.to_string_lossy().to_string();
+    let bytes = std::fs::read(&file_path).map_err(|error| {
+        CliError::file_io(
+            "FILE_READ_FAILED",
+            format!("Cannot read attachment file: {file_str}"),
+            error.to_string(),
+        )
+    })?;
+
+    let filename = file_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default()
+        .to_string();
+    if filename.is_empty() || filename == "." || filename == ".." {
+        return Err(CliError::usage("Attachment --file must include a valid filename"));
+    }
+
+    let content_type = match parsed.opt("content-type") {
+        Some(value) => {
+            let trimmed = value.trim().to_lowercase();
+            if trimmed.is_empty() {
+                return Err(CliError::usage("--content-type cannot be empty"));
+            }
+            trimmed
+        }
+        None => guess_content_type(&filename).to_string(),
+    };
+
+    // 目标存在性前置校验（对齐 Node：先查后写盘，避免失败留孤儿文件）；
+    // --task 支持 identifier 寻址
+    let (target_type, target_id) = if let Some(task_id) = &task_opt {
+        if db::task_id_cli(conn, task_id).is_none() {
+            return Err(CliError::api_code("TASK_NOT_FOUND", format!("Task '{task_id}' does not exist")));
+        }
+        ("task", task_id.clone())
+    } else {
+        let comment_id = comment_opt.as_deref().unwrap_or_default();
+        if db::get_comment_cli(conn, comment_id).is_none() {
+            return Err(CliError::api_code(
+                "COMMENT_NOT_FOUND",
+                format!("Comment '{comment_id}' does not exist"),
+            ));
+        }
+        ("comment", comment_id.to_string())
+    };
+
+    if bytes.len() > 10 * 1024 * 1024 {
+        return Err(CliError::api_code("ATTACHMENT_TOO_LARGE", "Attachment cannot exceed 10MB"));
+    }
+
+    // 先写盘（UUID 文件名）后入库，顺序对齐 db.rs #upload_attachment / Node
+    let dir = attachments_dir_or_unavailable()?;
+    let id = uuid::Uuid::new_v4().to_string();
+    let disk_path = dir.join(&id);
+    std::fs::create_dir_all(&dir).map_err(|error| file_write_failed(&disk_path, &error))?;
+    std::fs::write(&disk_path, &bytes).map_err(|error| file_write_failed(&disk_path, &error))?;
+
+    let attachment = db::create_attachment_cli(
+        conn,
+        &id,
+        task_opt.as_deref(),
+        comment_opt.as_deref(),
+        &filename,
+        &content_type,
+        bytes.len() as i64,
+    )?;
+    Ok(json!({
+        "attachment": attachment,
+        "file": file_str,
+        "target": { "type": target_type, "id": target_id },
+    }))
+}
+
+/// attachment download：operand 须为 UUID（对齐 db.rs sanitize_attachment_id）；
+/// DB 行与磁盘文件缺任一 → ATTACHMENT_NOT_FOUND；写盘失败 FILE_WRITE_FAILED（exit 2）
+fn attachment_download(conn: &Connection, attachment_id: &str, parsed: &Parsed) -> Result<Value, CliError> {
+    if db::sanitize_attachment_id(attachment_id).is_none() {
+        return Err(CliError::api_code(
+            "INVALID_FIELD",
+            format!("Invalid attachment id: {attachment_id}"),
+        ));
+    }
+    let attachment = db::get_attachment_cli(conn, attachment_id).ok_or_else(|| {
+        CliError::api_code("ATTACHMENT_NOT_FOUND", format!("Attachment '{attachment_id}' does not exist"))
+    })?;
+
+    let dir = attachments_dir_or_unavailable()?;
+    let bytes = std::fs::read(dir.join(attachment_id)).map_err(|_| {
+        // DB 行在而磁盘文件缺失：对齐 db.rs #read_attachment 的 ATTACHMENT_NOT_FOUND
+        CliError::api_code("ATTACHMENT_NOT_FOUND", format!("Attachment file missing: {attachment_id}"))
+    })?;
+
+    let output_path = resolve_input_path(&required_option(parsed, "output")?);
+    let output_str = output_path.to_string_lossy().to_string();
+    std::fs::write(&output_path, &bytes).map_err(|error| file_write_failed(&output_path, &error))?;
+    Ok(json!({
+        "attachmentId": attachment_id,
+        "output": output_str,
+        "contentType": attachment["contentType"],
+        "size": bytes.len(),
+    }))
 }
