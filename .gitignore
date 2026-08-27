@@ -35,3 +35,6 @@ widget/node_modules/
 
 # 测试产物目录（e2e 截图/临时 profile）
 widget/.out/
+
+# Claude worktree（子代理并行任务的工作目录，勿入库）
+.claude/worktrees/
