@@ -12,10 +12,10 @@
  *   VIBE_TASKDECK_DATA_DIR > %APPDATA%\Vibe-TaskDeck\taskboard.sqlite
  * （taskboard.py 会显式设置该变量指向 <repo>/.data，与挂件同库互通）
  *
- * 支持子集：project list/create、issue list/get/create/update/move/archive/restore、
+ * 支持子集：project list/create、issue list/get/create/update/move/archive/restore/relation、
  * comment list/add/update/delete、activity list、context current。
- * 不支持（纯客户端模式无 server）：cloud、project map、issue relation、attachment
- * （relation/attachment 可经挂件全版看板详情面板操作）。
+ * 不支持（纯客户端模式无 server）：cloud、project map、attachment
+ * （attachment 可经挂件全版看板详情面板操作）。
  */
 
 import { realpathSync } from "node:fs";
@@ -99,6 +99,7 @@ const COMMAND_OPTIONS = new Map([
   ])],
   ["issue archive", new Set(["thread-id", "if-version", "json"])],
   ["issue restore", new Set(["thread-id", "if-version", "json"])],
+  ["issue relation", new Set(["type", "issue", "thread-id", "if-version", "json"])],
   ["comment list", new Set(["json"])],
   ["comment add", new Set(["body", "thread-id", "json"])],
   ["comment update", new Set(["body", "thread-id", "if-version", "json"])],
@@ -114,7 +115,6 @@ const UNSUPPORTED_COMMANDS = new Set([
   "cloud login",
   "cloud status",
   "cloud logout",
-  "issue relation",
   "attachment download",
   "attachment upload",
 ]);
@@ -245,7 +245,7 @@ function execute(parsed, overrides) {
   const allowedOptions = COMMAND_OPTIONS.get(command);
   if (!allowedOptions) {
     throw usageError(
-      "Expected one of: project list/create, issue list/get/create/update/move/archive/restore, comment list/add/update/delete, activity list, context current",
+      "Expected one of: project list/create, issue list/get/create/update/move/archive/restore/relation, comment list/add/update/delete, activity list, context current",
     );
   }
   validateOptions(parsed.options, allowedOptions);
@@ -281,6 +281,9 @@ function execute(parsed, overrides) {
       case "issue restore":
         expectOperandCount(parsed, 1);
         return issueArchive(db, parsed.operands[0], parsed.options, overrides, "restore");
+      case "issue relation":
+        expectOperandCount(parsed, 2);
+        return issueRelation(db, parsed.operands, parsed.options, overrides);
       case "comment list":
         expectOperandCount(parsed, 1);
         return { comments: db.listComments(requireIssueId(parsed.operands[0])) };
@@ -491,6 +494,26 @@ function issueArchive(db, taskId, options, overrides, action) {
     ? db.archiveTask(id, version, threadId, undefined, resolveActor(overrides))
     : db.restoreTask(id, version, threadId, undefined, resolveActor(overrides));
   return { task };
+}
+
+/** 关联维护（对齐上游 mutateIssueRelation）：operands=[action, taskId]，--type/--issue 必填 */
+function issueRelation(db, operands, options, overrides) {
+  const [action, taskId] = operands;
+  if (action !== "add" && action !== "remove") {
+    throw usageError("issue relation action must be add or remove");
+  }
+  const type = requiredOption(options, "type");
+  if (!["parent", "blocks", "blocked_by", "related"].includes(type)) {
+    throw usageError("--type must be parent, blocks, blocked_by, or related");
+  }
+  const relatedTaskId = requiredOption(options, "issue");
+  const threadId = resolveThreadId(options, overrides);
+  const id = requireIssueId(taskId);
+  const version = resolveVersion(db, id, options["if-version"]);
+  const actor = resolveActor(overrides);
+  return action === "add"
+    ? db.addTaskRelation(id, version, type, relatedTaskId, threadId, undefined, actor)
+    : db.removeTaskRelation(id, version, type, relatedTaskId, threadId, undefined, actor);
 }
 
 function commentAdd(db, taskId, options, overrides) {

@@ -782,6 +782,126 @@ export class TaskboardDatabase {
   }
 
   /* ============================================================
+   * 任务关联（issue relation add/remove；写语义对齐 db.rs #add_relation/#remove_relation）
+   * ============================================================ */
+
+  /**
+   * 建立关联。调用点：db.addTaskRelation(id, version, type, relatedId, threadId, threadBinding, actor)。
+   * 端点规范化/自关联拒绝/parent 环检测/单父替换逐字对齐 db.rs；成功后 touch 双方
+   * （version+1 + updated_at）；返回 {task, relatedTask}（输出契约对齐上游 addTaskRelation）。
+   * thread/binding/actor 仅为对齐类内写方法签名保留（db.rs 关联路径不写 thread/活动流）。
+   */
+  addTaskRelation(id, version, type, relatedId, threadId, threadBinding, actor) {
+    if (id === relatedId) {
+      throw new ApiError(400, "INVALID_FIELD", "不能与自身建立关联");
+    }
+    const task = this.#requireTaskRow(id);
+    const related = this.#requireTaskRow(relatedId);
+    if (task.version !== version) {
+      throw new ApiError(409, "VERSION_CONFLICT", VERSION_CONFLICT_MESSAGE);
+    }
+    const { relationType, sourceTaskId, targetTaskId } = this.#relationEndpoints(type, task.id, related.id);
+
+    // parent 环检测：从 related 沿 parent（child→parent）向上最多 100 跳，祖先链含 task 即拒绝
+    if (relationType === "parent") {
+      let cursor = related.id;
+      for (let hops = 0; hops < 100; hops += 1) {
+        const parent = this.#db
+          .prepare(
+            "SELECT source_task_id FROM task_relations WHERE relation_type = 'parent' AND target_task_id = ?",
+          )
+          .get(cursor);
+        if (parent === undefined) break;
+        if (parent.source_task_id === task.id) {
+          throw new ApiError(400, "INVALID_FIELD", "不能创建循环的父子关联");
+        }
+        cursor = parent.source_task_id;
+      }
+    }
+
+    return this.#transaction(() => {
+      const timestamp = new Date().toISOString();
+      if (relationType === "parent") {
+        // 单父约束：替换该子任务已有 parent（对齐 db.rs / 上游）
+        this.#db
+          .prepare("DELETE FROM task_relations WHERE relation_type = 'parent' AND target_task_id = ?")
+          .run(targetTaskId);
+      } else {
+        const exists = this.#db
+          .prepare(
+            "SELECT 1 FROM task_relations WHERE relation_type = ? AND source_task_id = ? AND target_task_id = ?",
+          )
+          .get(relationType, sourceTaskId, targetTaskId);
+        if (exists) {
+          throw new ApiError(409, "RELATION_EXISTS", "该关联已存在");
+        }
+      }
+      this.#db
+        .prepare(
+          "INSERT INTO task_relations (relation_type, source_task_id, target_task_id, created_at) VALUES (?, ?, ?, ?)",
+        )
+        .run(relationType, sourceTaskId, targetTaskId, timestamp);
+      // touch 双方（对齐 db.rs #add_relation；上游 #touchTask 同义）
+      for (const taskId of [task.id, related.id]) {
+        this.#db
+          .prepare("UPDATE tasks SET version = version + 1, updated_at = ? WHERE id = ?")
+          .run(timestamp, taskId);
+      }
+      return { task: this.getTask(task.id), relatedTask: this.getTask(related.id) };
+    });
+  }
+
+  /**
+   * 移除关联。调用点：db.removeTaskRelation(id, version, type, relatedId, threadId, threadBinding, actor)。
+   * 端点规范化同上；DELETE 0 行报 RELATION_NOT_FOUND；成功只 touch id 一方（对齐 db.rs #remove_relation，
+   * 上游同：remove 不 touch related）。返回 {task, relatedTask}。
+   */
+  removeTaskRelation(id, version, type, relatedId, threadId, threadBinding, actor) {
+    const task = this.#requireTaskRow(id);
+    if (task.version !== version) {
+      throw new ApiError(409, "VERSION_CONFLICT", VERSION_CONFLICT_MESSAGE);
+    }
+    // related 存在性不强制（对齐 db.rs：remove 只校验 id 方）；存在时归一到真实 id（支持 identifier）
+    const relatedTaskId = this.#taskRow(relatedId)?.id ?? relatedId;
+    const { relationType, sourceTaskId, targetTaskId } = this.#relationEndpoints(type, task.id, relatedTaskId);
+    return this.#transaction(() => {
+      const deleted = this.#db
+        .prepare(
+          "DELETE FROM task_relations WHERE relation_type = ? AND source_task_id = ? AND target_task_id = ?",
+        )
+        .run(relationType, sourceTaskId, targetTaskId);
+      if (deleted.changes !== 1) {
+        throw new ApiError(404, "RELATION_NOT_FOUND", "该关联不存在");
+      }
+      const timestamp = new Date().toISOString();
+      this.#db
+        .prepare("UPDATE tasks SET version = version + 1, updated_at = ? WHERE id = ?")
+        .run(timestamp, task.id);
+      return { task: this.getTask(task.id), relatedTask: this.getTask(relatedTaskId) };
+    });
+  }
+
+  /** 关联端点规范化：对齐 db.rs #relation_endpoints / 上游 #relationEndpoints */
+  #relationEndpoints(type, taskId, relatedTaskId) {
+    if (type === "parent") {
+      return { relationType: "parent", sourceTaskId: relatedTaskId, targetTaskId: taskId };
+    }
+    if (type === "blocks") {
+      return { relationType: "blocks", sourceTaskId: taskId, targetTaskId: relatedTaskId };
+    }
+    if (type === "blocked_by") {
+      return { relationType: "blocks", sourceTaskId: relatedTaskId, targetTaskId: taskId };
+    }
+    if (type === "related") {
+      const [sourceTaskId, targetTaskId] = taskId < relatedTaskId
+        ? [taskId, relatedTaskId]
+        : [relatedTaskId, taskId];
+      return { relationType: "related", sourceTaskId, targetTaskId };
+    }
+    throw new ApiError(400, "INVALID_FIELD", `非法关联类型：${type}`);
+  }
+
+  /* ============================================================
    * 评论
    * ============================================================ */
 

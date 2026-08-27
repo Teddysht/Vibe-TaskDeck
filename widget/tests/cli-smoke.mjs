@@ -86,6 +86,81 @@ if (missingLayer) {
     { encoding: 'utf8', env }));
   check('默认列表不含已归档任务',
     Array.isArray(active?.tasks) && !active.tasks.some((i) => i.id === created?.task?.id));
+
+  // ---- 3b. 关联契约（issue relation add/remove；写语义对齐 widget db.rs）----
+  const run = (args) => spawnSync('node', [CLI, ...args], { encoding: 'utf8', env });
+  // stderr 会混入 node:sqlite ExperimentalWarning，取最后一行 JSON 解析
+  const errJson = (r) => {
+    const lines = (r.stderr || '').split('\n').filter((line) => line.trim().startsWith('{'));
+    try { return JSON.parse(lines[lines.length - 1] ?? ''); } catch { return null; }
+  };
+  const mkTask = (title) => asJson(run(['issue', 'create', '--project', 'local',
+    '--title', title, '--thread-id', 't-rel']))?.task;
+  const taskA = mkTask('relation-A');
+  const taskB = mkTask('relation-B');
+  const taskC = mkTask('relation-C');
+  check('relation 前置：建 A/B/C 三任务', Boolean(taskA && taskB && taskC));
+
+  if (taskA && taskB && taskC) {
+    const add = asJson(run(['issue', 'relation', 'add', taskA.id,
+      '--type', 'blocks', '--issue', taskB.id, '--thread-id', 't-rel']));
+    check('relation add blocks 返回 {task, relatedTask}',
+      add?.task?.id === taskA.id && add?.relatedTask?.id === taskB.id);
+    check('relation add 后双方 version 均 +1（v1→v2）',
+      add?.task?.version === 2 && add?.relatedTask?.version === 2);
+
+    const dup = run(['issue', 'relation', 'add', taskA.id,
+      '--type', 'blocks', '--issue', taskB.id, '--thread-id', 't-rel']);
+    check('relation add 重复 → RELATION_EXISTS（退出码非 0）',
+      dup.status !== 0 && errJson(dup)?.error?.code === 'RELATION_EXISTS',
+      `status=${dup.status} code=${errJson(dup)?.error?.code}`);
+
+    // parent 单父替换：A 的 parent 先设 C 再设 B → 旧边被替换
+    const parentFirst = run(['issue', 'relation', 'add', taskA.id,
+      '--type', 'parent', '--issue', taskC.id, '--thread-id', 't-rel']);
+    const parentReplace = run(['issue', 'relation', 'add', taskA.id,
+      '--type', 'parent', '--issue', taskB.id, '--thread-id', 't-rel']);
+    check('relation add parent 换父替换成功（单父）',
+      parentFirst.status === 0 && parentReplace.status === 0,
+      `first=${parentFirst.status} second=${parentReplace.status}`);
+    const oldParentGone = run(['issue', 'relation', 'remove', taskA.id,
+      '--type', 'parent', '--issue', taskC.id, '--thread-id', 't-rel']);
+    check('换父后旧 parent 边已被替换删除（RELATION_NOT_FOUND）',
+      oldParentGone.status !== 0 && errJson(oldParentGone)?.error?.code === 'RELATION_NOT_FOUND');
+
+    // parent 环检测：A 的 parent 是 B，再设 B 的 parent 为 A → 环
+    const cycle = run(['issue', 'relation', 'add', taskB.id,
+      '--type', 'parent', '--issue', taskA.id, '--thread-id', 't-rel']);
+    check('parent 环检测 → INVALID_FIELD',
+      cycle.status !== 0 && errJson(cycle)?.error?.code === 'INVALID_FIELD',
+      `code=${errJson(cycle)?.error?.code}`);
+
+    const remove = asJson(run(['issue', 'relation', 'remove', taskA.id,
+      '--type', 'parent', '--issue', taskB.id, '--thread-id', 't-rel']));
+    check('relation remove 成功返回 {task, relatedTask}',
+      remove?.task?.id === taskA.id && remove?.relatedTask?.id === taskB.id);
+    const removeAgain = run(['issue', 'relation', 'remove', taskA.id,
+      '--type', 'parent', '--issue', taskB.id, '--thread-id', 't-rel']);
+    check('relation remove 重复 → RELATION_NOT_FOUND',
+      removeAgain.status !== 0 && errJson(removeAgain)?.error?.code === 'RELATION_NOT_FOUND');
+
+    const badType = run(['issue', 'relation', 'add', taskA.id,
+      '--type', 'sibling', '--issue', taskB.id, '--thread-id', 't-rel']);
+    check('--type 非法值 → usage 错误（退出码 2 / USAGE_ERROR）',
+      badType.status === 2 && errJson(badType)?.error?.code === 'USAGE_ERROR');
+
+    // 版本口径：不带 --if-version 自动取当前版本；带过期版本 → VERSION_CONFLICT（退出码 5）
+    const bumped = run(['issue', 'move', taskA.id, '--status', 'in_progress', '--thread-id', 't-rel']);
+    const stale = run(['issue', 'relation', 'add', taskA.id,
+      '--type', 'related', '--issue', taskB.id, '--if-version', '1', '--thread-id', 't-rel']);
+    check('--if-version 过期 → VERSION_CONFLICT（退出码 5）',
+      bumped.status === 0 && stale.status === 5 && errJson(stale)?.error?.code === 'VERSION_CONFLICT',
+      `bump=${bumped.status} stale=${stale.status}`);
+    const fresh = run(['issue', 'relation', 'add', taskA.id,
+      '--type', 'related', '--issue', taskB.id, '--thread-id', 't-rel']);
+    check('不带 --if-version 自动取当前版本（手动 bump 后 add 仍成功）',
+      fresh.status === 0, (fresh.stderr || '').slice(0, 200));
+  }
 }
 
 rmSync(dataDir, { recursive: true, force: true });
