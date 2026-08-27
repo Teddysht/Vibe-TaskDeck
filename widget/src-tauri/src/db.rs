@@ -18,7 +18,7 @@ use serde_json::{json, Value};
 const DEFAULT_PROJECT_LABELS_JSON: &str = "[\"缺陷\",\"特性\",\"for-claude\",\"hold\",\"改进\",\"phase-1\",\"phase-2\",\"phase-3\",\"phase-4\",\"phase-5\",\"phase-6\"]";
 
 /// 挂件写操作的稳定 thread 标识（对齐 widget config.js 的 THREAD_ID）
-const WIDGET_THREAD_ID: &str = "taskboard-widget";
+pub const WIDGET_THREAD_ID: &str = "taskboard-widget";
 
 /// 挂件侧 actor：本地用户（与上游 app.mjs 无头请求的默认 actor 一致）。
 /// 单机单用户假设的产物——未来多成员在此预留 env 覆盖点
@@ -26,8 +26,30 @@ const WIDGET_THREAD_ID: &str = "taskboard-widget";
 /// 详见 TECHNICAL.md「已知技术债」。
 const LOCAL_USER_ACTOR: (&str, &str, &str) = ("user", "local-user", "本地用户");
 
-const TASK_STATUSES: [&str; 7] = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "canceled"];
-const TASK_PRIORITIES: [&str; 5] = ["none", "urgent", "high", "medium", "low"];
+pub const TASK_STATUSES: [&str; 7] = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "canceled"];
+pub const TASK_PRIORITIES: [&str; 5] = ["none", "urgent", "high", "medium", "low"];
+
+/// 写操作身份（挂件=本地用户；taskctl CLI=agent——由 taskctl 按
+/// VIBE_TASKDECK_ACTOR_* env 解析后传入，对齐 cli/taskctl-local.mjs resolveActor）
+#[derive(Clone, Debug)]
+pub struct Actor {
+    pub kind: String, // "user" | "agent"
+    pub id: String,
+    pub name: String,
+    pub avatar_url: Option<String>,
+}
+
+impl Actor {
+    /// agent actor（taskctl CLI 写路径；name 缺省回退 id 的规则在 taskctl 侧）
+    pub fn agent(id: &str, name: &str) -> Self {
+        Self { kind: "agent".into(), id: id.into(), name: name.into(), avatar_url: None }
+    }
+}
+
+/// 挂件 GUI 写路径的固定本地用户 actor（行为与旧版固定 LOCAL_USER_ACTOR 一致）
+pub fn local_user_actor() -> Actor {
+    Actor { kind: "user".into(), id: "local-user".into(), name: "本地用户".into(), avatar_url: None }
+}
 
 /// 托管状态：进程内单连接（command 层持锁使用）
 pub struct Db(pub std::sync::Mutex<Connection>);
@@ -445,6 +467,7 @@ pub fn create_task(
     status: &str,
     priority: &str,
     due_date: Option<&str>,
+    actor: &Actor,
 ) -> Result<Value, CommandError> {
     // —— 校验（upstream 路由层 parseTaskCreate 的等价规则）——
     if title.is_empty() || title.chars().count() > 240 {
@@ -456,9 +479,55 @@ pub fn create_task(
     if !TASK_PRIORITIES.contains(&priority) {
         return Err(CommandError::new("INVALID_FIELD", format!("非法 priority：{priority}")));
     }
+    // 挂件口径固定 local 项目 / WIDGET_THREAD_ID / 空描述无标签（与旧版行为一致）
+    let spec = TaskCreateSpec {
+        project_id: "local",
+        title,
+        description: "",
+        status,
+        priority,
+        labels: &[],
+        thread_id: Some(WIDGET_THREAD_ID),
+        start_date: None,
+        due_date,
+        assignee: None,
+    };
+    create_task_ex(conn, &spec, actor)
+}
+
+/// CLI（taskctl issue create）全量建任务入参。
+/// 语义逐条对齐 cli/database.mjs #createTask：identifier 前缀、sortOrder 缺省、
+/// 项目标签库合并去重、creator/assignee 落 actor。
+pub struct TaskCreateSpec<'a> {
+    pub project_id: &'a str,
+    pub title: &'a str,
+    pub description: &'a str,
+    pub status: &'a str,
+    pub priority: &'a str,
+    pub labels: &'a [String],
+    pub thread_id: Option<&'a str>,
+    pub start_date: Option<&'a str>,
+    pub due_date: Option<&'a str>,
+    /// None → assignee = actor（对齐 taskctl-local issueCreate 的 assignee: actor）
+    pub assignee: Option<&'a Actor>,
+}
+
+/// 新建任务（CLI 宽口径）：返回 CLI 宽形状 task（27 字段，task_full_json）。
+/// 事务 + identifier/sortOrder 语义对齐 upstream createTask（database.mjs:1702-1801）。
+pub fn create_task_ex(conn: &Connection, spec: &TaskCreateSpec, actor: &Actor) -> Result<Value, CommandError> {
+    if spec.title.is_empty() || spec.title.chars().count() > 240 {
+        return Err(CommandError::new("INVALID_FIELD", "title 必填且不超过 240 字符"));
+    }
+    if !TASK_STATUSES.contains(&spec.status) {
+        return Err(CommandError::new("INVALID_FIELD", format!("非法 status：{}", spec.status)));
+    }
+    if !TASK_PRIORITIES.contains(&spec.priority) {
+        return Err(CommandError::new("INVALID_FIELD", format!("非法 priority：{}", spec.priority)));
+    }
 
     conn.execute_batch("BEGIN IMMEDIATE")?;
-    match create_task_inner(conn, title, status, priority, due_date) {
+    let result = create_task_ex_inner(conn, spec, actor);
+    match result {
         Ok(task) => {
             conn.execute_batch("COMMIT")?;
             Ok(task)
@@ -470,12 +539,10 @@ pub fn create_task(
     }
 }
 
-fn create_task_inner(
+fn create_task_ex_inner(
     conn: &Connection,
-    title: &str,
-    status: &str,
-    priority: &str,
-    due_date: Option<&str>,
+    spec: &TaskCreateSpec,
+    actor: &Actor,
 ) -> Result<Value, CommandError> {
     struct ProjectRow {
         labels: String,
@@ -488,8 +555,8 @@ fn create_task_inner(
                     (SELECT tasks.identifier FROM tasks
                      WHERE tasks.project_id = projects.id
                      ORDER BY tasks.created_at, tasks.id LIMIT 1) AS first_identifier
-             FROM projects WHERE id = 'local'",
-            [],
+             FROM projects WHERE id = ?1",
+            rusqlite::params![spec.project_id],
             |row| {
                 Ok(ProjectRow {
                     labels: row.get(0)?,
@@ -498,7 +565,7 @@ fn create_task_inner(
                 })
             },
         )
-        .map_err(|_| CommandError::new("PROJECT_NOT_FOUND", "默认项目 local 不存在"))?;
+        .map_err(|_| CommandError::new("PROJECT_NOT_FOUND", format!("项目不存在：{}", spec.project_id)))?;
 
     // identifier 前缀：项目首个任务 identifier 去掉尾部 -数字，否则项目 id 大写去非字母数字截 12
     let prefix: String = match &project.first_identifier {
@@ -510,9 +577,9 @@ fn create_task_inner(
             {
                 head.to_string()
             }
-            _ => project_prefix("local"),
+            _ => project_prefix(spec.project_id),
         },
-        None => project_prefix("local"),
+        None => project_prefix(spec.project_id),
     };
 
     let glob = format!("{prefix}-[0-9]*");
@@ -530,21 +597,37 @@ fn create_task_inner(
     // sortOrder 缺省 = 同项目同状态未归档最小值 − 1000（无则 1000）
     let minimum: Option<f64> = conn.query_row(
         "SELECT MIN(sort_order) FROM tasks
-         WHERE project_id = 'local' AND status = ?1 AND archived_at IS NULL",
-        rusqlite::params![status],
+         WHERE project_id = ?1 AND status = ?2 AND archived_at IS NULL",
+        rusqlite::params![spec.project_id, spec.status],
         |row| row.get(0),
     )?;
     let sort_order = minimum.map_or(1000.0, |min| min - 1000.0);
 
-    // 推进项目编号；labels 与项目合并去重（挂件无自定义 labels，等价于原样保留）
-    let mut labels: Vec<String> = serde_json::from_str(&project.labels).unwrap_or_default();
-    labels.dedup();
+    // 任务 labels 去重（保序）；项目标签库合并去重回写（对齐 Node createTask #mergeLabels）
+    let mut labels: Vec<String> = Vec::new();
+    for label in spec.labels {
+        if !labels.contains(label) {
+            labels.push(label.clone());
+        }
+    }
+    let mut catalog: Vec<String> = serde_json::from_str(&project.labels).unwrap_or_default();
+    for label in &labels {
+        if !catalog.contains(label) {
+            catalog.push(label.clone());
+        }
+    }
     conn.execute(
-        "UPDATE projects SET next_task_number = ?1, labels = ?2, updated_at = ?3 WHERE id = 'local'",
-        rusqlite::params![number + 1, serde_json::to_string(&labels).unwrap_or_else(|_| "[]".into()), timestamp],
+        "UPDATE projects SET next_task_number = ?1, labels = ?2, updated_at = ?3 WHERE id = ?4",
+        rusqlite::params![
+            number + 1,
+            serde_json::to_string(&catalog).unwrap_or_else(|_| "[]".into()),
+            timestamp,
+            spec.project_id
+        ],
     )?;
 
-    let (actor_type, actor_id, actor_name) = LOCAL_USER_ACTOR;
+    // assignee 缺省 = actor（对齐 taskctl-local issueCreate：assignee: actor）
+    let assignee = spec.assignee.unwrap_or(actor);
     conn.execute(
         "INSERT INTO tasks (
            id, identifier, project_id, title, description, status, priority, labels,
@@ -555,42 +638,54 @@ fn create_task_inner(
            workflow_id, git_branch, worktree_path, worktree_branch,
            start_date, due_date, recurrence_interval, recurrence_unit,
            archived_at, version, created_at, updated_at
-         ) VALUES (?1, ?2, 'local', ?3, '', ?4, ?5, '[]',
-                   ?6, ?7, NULL, NULL, NULL, NULL,
-                   ?8, ?9, ?10, NULL,
-                   ?8, ?9, ?10, NULL,
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8,
+                   ?9, ?10, NULL, NULL, NULL, NULL,
+                   ?11, ?12, ?13, ?14,
+                   ?15, ?16, ?17, ?18,
                    NULL, NULL, NULL, NULL,
-                   NULL, ?11, NULL, NULL,
-                   NULL, 1, ?12, ?12)",
+                   ?19, ?20, NULL, NULL,
+                   NULL, 1, ?21, ?21)",
         rusqlite::params![
             id,
             identifier,
-            title,
-            status,
-            priority,
+            spec.project_id,
+            spec.title,
+            spec.description,
+            spec.status,
+            spec.priority,
+            serde_json::to_string(&labels).unwrap_or_else(|_| "[]".into()),
             sort_order,
-            WIDGET_THREAD_ID,
-            actor_type,
-            actor_id,
-            actor_name,
-            due_date,
+            spec.thread_id,
+            actor.kind,
+            actor.id,
+            actor.name,
+            actor.avatar_url,
+            assignee.kind,
+            assignee.id,
+            assignee.name,
+            assignee.avatar_url,
+            spec.start_date,
+            spec.due_date,
             timestamp,
         ],
     )?;
 
-    get_task_columns(conn, &id)?
-        .map(task_to_json)
+    task_wide_by_id(conn, &id)?
         .ok_or_else(|| CommandError::new("DB_ERROR", "创建后读取任务失败"))
 }
 
 /// 流转任务：对齐 upstream moveTask（database.mjs:1942-1992）
 /// sortOrder：显式传入（拖拽落点排序）优先；缺省按上游惯例（状态变化→min−1000；未变→max+1000）
+/// thread_id：Some → 随迁移重写会话归属（挂件传 WIDGET_THREAD_ID，CLI 传解析后的
+/// --thread-id）；None → 保持当前值（Node moveTask 的 threadId ?? current.thread_id）
 pub fn move_task(
     conn: &Connection,
     id: &str,
     version: i64,
     status: &str,
     sort_order: Option<f64>,
+    thread_id: Option<&str>,
+    actor: &Actor,
 ) -> Result<Value, CommandError> {
     if !TASK_STATUSES.contains(&status) {
         return Err(CommandError::new("INVALID_FIELD", format!("非法 status：{status}")));
@@ -633,11 +728,12 @@ pub fn move_task(
         let updated = conn.execute(
             "UPDATE tasks
              SET status = ?1, sort_order = ?2,
-                 thread_id = ?3, thread_codex_project_id = NULL, thread_codex_project_kind = NULL,
+                 thread_id = COALESCE(?3, thread_id),
+                 thread_codex_project_id = NULL, thread_codex_project_kind = NULL,
                  thread_codex_host_id = NULL, thread_workspace_path = NULL,
                  version = version + 1, updated_at = ?4
              WHERE id = ?5 AND version = ?6",
-            rusqlite::params![status, sort_order, WIDGET_THREAD_ID, timestamp, current.id, version],
+            rusqlite::params![status, sort_order, thread_id, timestamp, current.id, version],
         )?;
         if updated != 1 {
             return Err(CommandError::new(
@@ -648,17 +744,17 @@ pub fn move_task(
         // 状态实际变化时记录活动流（Node 端 getTask 会读取）
         if status != current.status {
             let changes = json!([{ "field": "status", "before": current.status, "after": status }]);
-            let (actor_type, actor_id, actor_name) = LOCAL_USER_ACTOR;
             conn.execute(
                 "INSERT INTO task_activities (
                    id, task_id, actor_type, actor_id, actor_name, actor_avatar_url, changes, created_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7)",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 rusqlite::params![
                     uuid::Uuid::new_v4().to_string(),
                     current.id,
-                    actor_type,
-                    actor_id,
-                    actor_name,
+                    actor.kind,
+                    actor.id,
+                    actor.name,
+                    actor.avatar_url,
                     changes.to_string(),
                     timestamp,
                 ],
@@ -682,21 +778,25 @@ pub fn move_task(
 }
 
 /// 更新任务属性：对齐 upstream updateTask（database.mjs:1803-1940）
-/// 白名单 title/description/status/priority/labels/startDate/dueDate；
+/// 白名单 title/description/status/priority/labels/startDate/dueDate/assignee；
 /// version 乐观并发；labels 变更后与项目标签库合并去重；status 变化置
 /// sortOrder=min−1000；活动流只记实际变化字段（taskFieldChanges diff 语义）。
+/// thread_id：Some 且与当前值不同 → 随写（CLI 会话归属）；None → 不动（挂件口径）。
+/// actor：活动流记录者（挂件本地用户 / CLI agent）。
 pub fn update_task(
     conn: &Connection,
     id: &str,
     version: i64,
     changes: &Value,
+    thread_id: Option<&str>,
+    actor: &Actor,
 ) -> Result<Value, CommandError> {
     let Some(changes_obj) = changes.as_object() else {
         return Err(CommandError::new("INVALID_FIELD", "changes 必须是对象"));
     };
-    // 白名单校验（未知键拒绝，对齐上游）
-    const WHITELIST: [&str; 7] = [
-        "title", "description", "status", "priority", "labels", "startDate", "dueDate",
+    // 白名单校验（未知键拒绝，对齐上游；assignee 为 CLI 扩展）
+    const WHITELIST: [&str; 8] = [
+        "title", "description", "status", "priority", "labels", "startDate", "dueDate", "assignee",
     ];
     for key in changes_obj.keys() {
         if !WHITELIST.contains(&key.as_str()) {
@@ -718,6 +818,7 @@ pub fn update_task(
     let mut activity_changes: Vec<Value> = Vec::new();
     let mut new_labels: Option<Vec<String>> = None;
     let mut new_status: Option<String> = None;
+    let mut assignee_before: Option<String> = None;
 
     let push = |clauses: &mut Vec<String>, params: &mut Vec<Box<dyn rusqlite::ToSql>>, clause: String, value: Box<dyn rusqlite::ToSql>| {
         clauses.push(clause);
@@ -808,12 +909,36 @@ pub fn update_task(
                 }
                 differs
             }
+            // CLI 扩展（--assignee <id>）：agent actor 以 id 落 assignee 三列
+            "assignee" => {
+                let Some(a) = after.as_str() else {
+                    return Err(CommandError::new("INVALID_FIELD", "assignee 必须是字符串"));
+                };
+                let before: Option<String> = conn.query_row(
+                    "SELECT assignee_id FROM tasks WHERE id = ?1",
+                    rusqlite::params![current.id],
+                    |row| row.get(0),
+                )?;
+                assignee_before = before.clone();
+                let differs = before.as_deref() != Some(a);
+                if differs {
+                    push(&mut set_clauses, &mut params, "assignee_type = ?".into(), Box::new("agent".to_string()));
+                    push(&mut set_clauses, &mut params, "assignee_id = ?".into(), Box::new(a.to_string()));
+                    push(&mut set_clauses, &mut params, "assignee_name = ?".into(), Box::new(a.to_string()));
+                }
+                differs
+            }
             _ => unreachable!("白名单已过滤"),
         };
         if changed {
+            let (field_name, before_value) = if key == "assignee" {
+                ("assigneeId", assignee_before.clone().map(Value::String).unwrap_or(Value::Null))
+            } else {
+                (key.as_str(), field_before(&current, key))
+            };
             activity_changes.push(json!({
-                "field": key,
-                "before": field_before(&current, key),
+                "field": field_name,
+                "before": before_value,
                 "after": after,
             }));
         }
@@ -830,6 +955,13 @@ pub fn update_task(
         let sort_order = minimum.map_or(1000.0, |min| min - 1000.0);
         push(&mut set_clauses, &mut params, "status = ?".into(), Box::new(status.clone()));
         push(&mut set_clauses, &mut params, "sort_order = ?".into(), Box::new(sort_order));
+    }
+
+    // 会话归属：Some 且与当前不同 → 随写（对齐 Node updateTask；不记活动流 diff）
+    if let Some(t) = thread_id {
+        if current.thread_id.as_deref() != Some(t) {
+            push(&mut set_clauses, &mut params, "thread_id = ?".into(), Box::new(t.to_string()));
+        }
     }
 
     // 无任何实际变化 → 直接返回当前（不产生 version 递增，对齐上游 diff 语义）
@@ -882,17 +1014,17 @@ pub fn update_task(
             return Err(CommandError::new("VERSION_CONFLICT", "任务已被其他会话修改，请重试"));
         }
         if !activity_changes.is_empty() {
-            let (actor_type, actor_id, actor_name) = LOCAL_USER_ACTOR;
             conn.execute(
                 "INSERT INTO task_activities (
                    id, task_id, actor_type, actor_id, actor_name, actor_avatar_url, changes, created_at
-                 ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7)",
+                 ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
                 rusqlite::params![
                     uuid::Uuid::new_v4().to_string(),
                     current.id,
-                    actor_type,
-                    actor_id,
-                    actor_name,
+                    actor.kind,
+                    actor.id,
+                    actor.name,
+                    actor.avatar_url,
                     serde_json::to_string(&activity_changes)
                         .unwrap_or_else(|_| "[]".into()),
                     timestamp,
@@ -1106,8 +1238,8 @@ pub fn delete_project_label(conn: &Connection, project_id: &str, label: &str) ->
     }
 }
 
-/// 归档任务：对齐 upstream archiveTask（database.mjs:1994）
-pub fn archive_task(conn: &Connection, id: &str, version: i64) -> Result<Value, CommandError> {
+/// 归档任务：对齐 upstream archiveTask（database.mjs:1994）；actor 记活动流
+pub fn archive_task(conn: &Connection, id: &str, version: i64, actor: &Actor) -> Result<Value, CommandError> {
     let current = get_task_columns(conn, id)?
         .ok_or_else(|| CommandError::new("TASK_NOT_FOUND", format!("任务不存在：{id}")))?;
     if current.version != version {
@@ -1123,15 +1255,16 @@ pub fn archive_task(conn: &Connection, id: &str, version: i64) -> Result<Value, 
         if updated != 1 {
             return Err(CommandError::new("VERSION_CONFLICT", "任务已被其他会话修改，请重试"));
         }
-        let (actor_type, actor_id, actor_name) = LOCAL_USER_ACTOR;
+        let (actor_type, actor_id, actor_name) = (actor.kind.as_str(), actor.id.as_str(), actor.name.as_str());
         conn.execute(
             "INSERT INTO task_activities (
                id, task_id, actor_type, actor_id, actor_name, actor_avatar_url, changes, created_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             rusqlite::params![
                 uuid::Uuid::new_v4().to_string(),
                 current.id,
                 actor_type, actor_id, actor_name,
+                actor.avatar_url,
                 json!([{ "field": "archivedAt", "before": current.archived_at, "after": timestamp }]).to_string(),
                 timestamp,
             ],
@@ -1145,8 +1278,8 @@ pub fn archive_task(conn: &Connection, id: &str, version: i64) -> Result<Value, 
     }
 }
 
-/// 恢复归档：对齐 upstream restoreTask（database.mjs:2029）——仅归档任务可恢复
-pub fn restore_task(conn: &Connection, id: &str, version: i64) -> Result<Value, CommandError> {
+/// 恢复归档：对齐 upstream restoreTask（database.mjs:2029）——仅归档任务可恢复；actor 记活动流
+pub fn restore_task(conn: &Connection, id: &str, version: i64, actor: &Actor) -> Result<Value, CommandError> {
     let current = get_task_columns(conn, id)?
         .ok_or_else(|| CommandError::new("TASK_NOT_FOUND", format!("任务不存在：{id}")))?;
     if current.version != version {
@@ -1165,15 +1298,16 @@ pub fn restore_task(conn: &Connection, id: &str, version: i64) -> Result<Value, 
         if updated != 1 {
             return Err(CommandError::new("VERSION_CONFLICT", "任务已被其他会话修改，请重试"));
         }
-        let (actor_type, actor_id, actor_name) = LOCAL_USER_ACTOR;
+        let (actor_type, actor_id, actor_name) = (actor.kind.as_str(), actor.id.as_str(), actor.name.as_str());
         conn.execute(
             "INSERT INTO task_activities (
                id, task_id, actor_type, actor_id, actor_name, actor_avatar_url, changes, created_at
-             ) VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             rusqlite::params![
                 uuid::Uuid::new_v4().to_string(),
                 current.id,
                 actor_type, actor_id, actor_name,
+                actor.avatar_url,
                 json!([{ "field": "archivedAt", "before": current.archived_at, "after": null }]).to_string(),
                 timestamp,
             ],
@@ -1564,6 +1698,475 @@ fn project_prefix(project_id: &str) -> String {
     prefix.chars().take(12).collect()
 }
 
+/* ============================================================
+ * CLI（taskctl）口径扩展：宽形状序列化 + 全量查询/写入
+ *
+ * 输出契约逐字对齐 cli/taskctl-local.mjs / cli/database.mjs：
+ *   · task 27 字段宽形状（#taskJson）：snake_case → camelCase、null 处理一致
+ *   · issue get = 宽 task + comments + activities（#getTask）
+ *   · activity feed 跨任务聚合（#listActivityFeed：rowid 游标 + thread 过滤）
+ *   · project 宽形状（#projectJson）与 create（PROJECT_EXISTS 409）
+ * 挂件 GUI 依赖的窄形状函数（list_tasks/task_to_json/issue_detail）不动。
+ * ============================================================ */
+
+/// CLI 全量任务列（对齐 Node TASK_SELECT_COLUMNS）
+const TASK_FULL_COLUMNS: &str = "id, identifier, project_id, title, description, status, priority, labels, sort_order,
+       thread_id, creator_type, creator_id, creator_name, creator_avatar_url,
+       assignee_type, assignee_id, assignee_name, assignee_avatar_url,
+       workflow_id, git_branch, worktree_path, worktree_branch,
+       start_date, due_date, recurrence_interval, recurrence_unit,
+       archived_at, version, created_at, updated_at";
+
+#[derive(Debug)]
+struct TaskFullRow {
+    id: String,
+    identifier: String,
+    project_id: String,
+    title: String,
+    description: String,
+    status: String,
+    priority: String,
+    labels: String,
+    sort_order: f64,
+    thread_id: Option<String>,
+    creator_type: String,
+    creator_id: String,
+    creator_name: String,
+    creator_avatar_url: Option<String>,
+    assignee_type: String,
+    assignee_id: String,
+    assignee_name: String,
+    assignee_avatar_url: Option<String>,
+    workflow_id: Option<String>,
+    git_branch: Option<String>,
+    worktree_path: Option<String>,
+    worktree_branch: Option<String>,
+    start_date: Option<String>,
+    due_date: Option<String>,
+    recurrence_interval: Option<i64>,
+    recurrence_unit: Option<String>,
+    archived_at: Option<String>,
+    version: i64,
+    created_at: String,
+    updated_at: String,
+}
+
+fn read_task_full_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<TaskFullRow> {
+    Ok(TaskFullRow {
+        id: row.get(0)?,
+        identifier: row.get(1)?,
+        project_id: row.get(2)?,
+        title: row.get(3)?,
+        description: row.get(4)?,
+        status: row.get(5)?,
+        priority: row.get(6)?,
+        labels: row.get(7)?,
+        sort_order: row.get(8)?,
+        thread_id: row.get(9)?,
+        creator_type: row.get(10)?,
+        creator_id: row.get(11)?,
+        creator_name: row.get(12)?,
+        creator_avatar_url: row.get(13)?,
+        assignee_type: row.get(14)?,
+        assignee_id: row.get(15)?,
+        assignee_name: row.get(16)?,
+        assignee_avatar_url: row.get(17)?,
+        workflow_id: row.get(18)?,
+        git_branch: row.get(19)?,
+        worktree_path: row.get(20)?,
+        worktree_branch: row.get(21)?,
+        start_date: row.get(22)?,
+        due_date: row.get(23)?,
+        recurrence_interval: row.get(24)?,
+        recurrence_unit: row.get(25)?,
+        archived_at: row.get(26)?,
+        version: row.get(27)?,
+        created_at: row.get(28)?,
+        updated_at: row.get(29)?,
+    })
+}
+
+/// CLI 宽形状 task（27 字段；对齐 Node #taskJson 的键与 null 语义）
+fn task_full_json(t: &TaskFullRow) -> Value {
+    json!({
+        "id": t.id,
+        "identifier": t.identifier,
+        "projectId": t.project_id,
+        "title": t.title,
+        "description": t.description,
+        "status": t.status,
+        "priority": t.priority,
+        "labels": parse_json_value(&t.labels),
+        "sortOrder": t.sort_order,
+        "threadId": t.thread_id,
+        "creatorType": t.creator_type,
+        "creatorId": t.creator_id,
+        "creatorName": t.creator_name,
+        "creatorAvatarUrl": t.creator_avatar_url,
+        "assigneeType": t.assignee_type,
+        "assigneeId": t.assignee_id,
+        "assigneeName": t.assignee_name,
+        "assigneeAvatarUrl": t.assignee_avatar_url,
+        "workflowId": t.workflow_id,
+        "developmentContext": development_context_json(t),
+        "recurrence": match t.recurrence_interval {
+            Some(interval) => json!({ "interval": interval, "unit": t.recurrence_unit }),
+            None => Value::Null,
+        },
+        "startDate": t.start_date,
+        "dueDate": t.due_date,
+        "archivedAt": t.archived_at,
+        "version": t.version,
+        "createdAt": t.created_at,
+        "updatedAt": t.updated_at,
+    })
+}
+
+/// developmentContext（对齐 Node #developmentContext：branch > worktree > null）
+fn development_context_json(t: &TaskFullRow) -> Value {
+    if let Some(branch) = &t.git_branch {
+        return json!({ "type": "branch", "branch": branch });
+    }
+    if let Some(path) = &t.worktree_path {
+        return json!({ "type": "worktree", "path": path, "branch": t.worktree_branch });
+    }
+    Value::Null
+}
+
+/// JSON 数组列容错解析（对齐 Node #parseJsonArray：非数组/解析失败 → []）
+fn parse_json_value(text: &str) -> Value {
+    match serde_json::from_str::<Value>(text) {
+        Ok(value) if value.is_array() => value,
+        _ => json!([]),
+    }
+}
+
+/// 按 id/identifier 取宽形状 task（对齐 Node #taskRow 的定位规则）
+pub fn get_task_wide(conn: &Connection, id: &str) -> Option<Value> {
+    let sql = format!("SELECT {TASK_FULL_COLUMNS} FROM tasks WHERE id = ?1 OR identifier = ?1");
+    let mut stmt = conn.prepare(&sql).ok()?;
+    let mut rows = stmt.query_map(rusqlite::params![id], read_task_full_row).ok()?;
+    rows.next()?.ok().map(|t| task_full_json(&t))
+}
+
+/// 按真实 id 取宽形状 task（内部复用）
+fn task_wide_by_id(conn: &Connection, id: &str) -> rusqlite::Result<Option<Value>> {
+    let sql = format!("SELECT {TASK_FULL_COLUMNS} FROM tasks WHERE id = ?1");
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query_map(rusqlite::params![id], read_task_full_row)?;
+    match rows.next() {
+        Some(row) => Ok(Some(task_full_json(&row?))),
+        None => Ok(None),
+    }
+}
+
+/// issue get：宽形状 task + comments + activities（对齐 Node #getTask）。
+/// 评论/活动排序 tiebreaker 用 rowid（插入序=时间序，同挂件 issue_detail）。
+pub fn get_task_full(conn: &Connection, id: &str) -> Option<Value> {
+    let mut task = get_task_wide(conn, id)?;
+    let task_id = task["id"].as_str()?.to_string();
+    task["comments"] = json!(task_comments_full(conn, &task_id));
+    task["activities"] = json!(task_activities_full(conn, &task_id));
+    Some(task)
+}
+
+/// 评论宽形状列表（对齐 Node #commentJson 全字段）
+fn task_comments_full(conn: &Connection, task_id: &str) -> Vec<Value> {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT id, task_id, body, thread_id, author_type, author_id, author_name,
+                author_avatar_url, version, created_at, updated_at
+         FROM comments WHERE task_id = ?1 ORDER BY created_at, rowid",
+    ) else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map(rusqlite::params![task_id], |row| {
+        Ok(json!({
+            "id": row.get::<_, String>(0)?,
+            "taskId": row.get::<_, String>(1)?,
+            "body": row.get::<_, String>(2)?,
+            "threadId": row.get::<_, Option<String>>(3)?,
+            "authorType": row.get::<_, String>(4)?,
+            "authorId": row.get::<_, String>(5)?,
+            "authorName": row.get::<_, String>(6)?,
+            "authorAvatarUrl": row.get::<_, Option<String>>(7)?,
+            "version": row.get::<_, i64>(8)?,
+            "createdAt": row.get::<_, String>(9)?,
+            "updatedAt": row.get::<_, String>(10)?,
+        }))
+    }) else {
+        return Vec::new();
+    };
+    rows.filter_map(|r| r.ok()).collect()
+}
+
+/// 活动流宽形状列表（对齐 Node #activityJson：changes 解析为数组）
+fn task_activities_full(conn: &Connection, task_id: &str) -> Vec<Value> {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT id, task_id, actor_type, actor_id, actor_name, actor_avatar_url, changes, created_at
+         FROM task_activities WHERE task_id = ?1 ORDER BY created_at, rowid",
+    ) else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map(rusqlite::params![task_id], |row| {
+        Ok(activity_json(
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+            row.get::<_, String>(4)?,
+            row.get::<_, Option<String>>(5)?,
+            row.get::<_, String>(6)?,
+            row.get::<_, String>(7)?,
+        ))
+    }) else {
+        return Vec::new();
+    };
+    rows.filter_map(|r| r.ok()).collect()
+}
+
+fn activity_json(
+    id: String,
+    task_id: String,
+    actor_type: String,
+    actor_id: String,
+    actor_name: String,
+    actor_avatar_url: Option<String>,
+    changes: String,
+    created_at: String,
+) -> Value {
+    let changes: Value = match serde_json::from_str::<Value>(&changes) {
+        Ok(value) if value.is_array() => value,
+        _ => json!([]),
+    };
+    json!({
+        "id": id,
+        "taskId": task_id,
+        "actorType": actor_type,
+        "actorId": actor_id,
+        "actorName": actor_name,
+        "actorAvatarUrl": actor_avatar_url,
+        "changes": changes,
+        "createdAt": created_at,
+    })
+}
+
+/// 任务定位 + 当前版本（taskctl resolveVersion / relation 解析复用）：
+/// 返回 (真实 id, version)；不存在返回 None（支持 identifier）
+pub fn task_version(conn: &Connection, id: &str) -> Option<(String, i64)> {
+    conn.query_row(
+        "SELECT id, version FROM tasks WHERE id = ?1 OR identifier = ?1",
+        rusqlite::params![id],
+        |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+    )
+    .ok()
+}
+
+/// id/identifier → 真实 uuid（不存在返回 None）
+pub fn resolve_task_id(conn: &Connection, id: &str) -> Option<String> {
+    task_version(conn, id).map(|(real, _)| real)
+}
+
+/// issue list 过滤器（project/status/priority/assignee/creator/label/thread-id/
+/// archived/search；archived None = all 不按归档过滤，默认语义由调用方归一化）
+#[derive(Clone, Copy)]
+pub struct TaskListFilter<'a> {
+    pub project_id: Option<&'a str>,
+    pub status: Option<&'a str>,
+    pub priority: Option<&'a str>,
+    pub assignee_id: Option<&'a str>,
+    pub creator_id: Option<&'a str>,
+    pub label: Option<&'a str>,
+    pub thread_id: Option<&'a str>,
+    /// Some(true) 只看归档 / Some(false) 只看未归档 / None 不过滤
+    pub archived: Option<bool>,
+    pub search: Option<&'a str>,
+}
+
+/// LIKE 通配符转义（%/_/\ 前缀反斜杠，配合 ESCAPE '\'）
+fn escape_like(value: &str) -> String {
+    value.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
+/// CLI 口径任务列表（宽形状 + 过滤；ORDER BY 对齐 db.rs #list_tasks / Node listTasks）
+pub fn list_tasks_full(conn: &Connection, filter: &TaskListFilter) -> Vec<Value> {
+    let mut clauses: Vec<String> = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(v) = filter.project_id.filter(|s| !s.is_empty()) {
+        clauses.push("project_id = ?".into());
+        params.push(Box::new(v.to_string()));
+    }
+    if let Some(v) = filter.status.filter(|s| !s.is_empty()) {
+        clauses.push("status = ?".into());
+        params.push(Box::new(v.to_string()));
+    }
+    if let Some(v) = filter.priority.filter(|s| !s.is_empty()) {
+        clauses.push("priority = ?".into());
+        params.push(Box::new(v.to_string()));
+    }
+    if let Some(v) = filter.assignee_id.filter(|s| !s.is_empty()) {
+        clauses.push("assignee_id = ?".into());
+        params.push(Box::new(v.to_string()));
+    }
+    if let Some(v) = filter.creator_id.filter(|s| !s.is_empty()) {
+        clauses.push("creator_id = ?".into());
+        params.push(Box::new(v.to_string()));
+    }
+    if let Some(v) = filter.thread_id.filter(|s| !s.is_empty()) {
+        clauses.push("thread_id = ?".into());
+        params.push(Box::new(v.to_string()));
+    }
+    if let Some(label) = filter.label.filter(|s| !s.is_empty()) {
+        // labels 是 JSON 数组列：按 JSON 字符串形式的元素精确匹配（"label" 带引号）
+        clauses.push("labels LIKE ? ESCAPE '\\'".into());
+        let quoted = serde_json::to_string(label).unwrap_or_default();
+        params.push(Box::new(format!("%{}%", escape_like(&quoted))));
+    }
+    if let Some(v) = filter.search.filter(|s| !s.is_empty()) {
+        clauses.push("title LIKE ? ESCAPE '\\'".into());
+        params.push(Box::new(format!("%{}%", escape_like(v))));
+    }
+    match filter.archived {
+        Some(true) => clauses.push("archived_at IS NOT NULL".into()),
+        Some(false) => clauses.push("archived_at IS NULL".into()),
+        None => {}
+    }
+    let where_sql = if clauses.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", clauses.join(" AND "))
+    };
+    let sql = format!(
+        "SELECT {TASK_FULL_COLUMNS} FROM tasks
+         {where_sql}
+         ORDER BY
+           CASE status
+             WHEN 'backlog' THEN 1
+             WHEN 'todo' THEN 2
+             WHEN 'in_progress' THEN 3
+             WHEN 'in_review' THEN 4
+             WHEN 'blocked' THEN 5
+             WHEN 'done' THEN 6
+             WHEN 'canceled' THEN 7
+           END,
+           sort_order, created_at, id"
+    );
+    let Ok(mut stmt) = conn.prepare(&sql) else {
+        return Vec::new();
+    };
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let Ok(rows) = stmt.query_map(param_refs.as_slice(), read_task_full_row) else {
+        return Vec::new();
+    };
+    rows.filter_map(|r| r.ok()).map(|t| task_full_json(&t)).collect()
+}
+
+/// 项目宽形状（对齐 Node #projectJson：id/name/workspacePath/labels/createdAt/updatedAt）
+fn project_full_json(id: String, name: String, workspace_path: Option<String>, labels: String, created_at: String, updated_at: String) -> Value {
+    json!({
+        "id": id,
+        "name": name,
+        "workspacePath": workspace_path,
+        "labels": parse_json_value(&labels),
+        "createdAt": created_at,
+        "updatedAt": updated_at,
+    })
+}
+
+/// CLI 项目列表（宽形状；ORDER BY 对齐 Node listProjects）
+pub fn list_projects_full(conn: &Connection) -> Vec<Value> {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT id, name, workspace_path, labels, created_at, updated_at FROM projects ORDER BY created_at, id",
+    ) else {
+        return Vec::new();
+    };
+    let Ok(rows) = stmt.query_map([], |row| {
+        Ok(project_full_json(
+            row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?,
+        ))
+    }) else {
+        return Vec::new();
+    };
+    rows.filter_map(|r| r.ok()).collect()
+}
+
+/// 新建项目（对齐 Node createProject：PROJECT_EXISTS 409；labels 默认标签库）
+pub fn create_project(conn: &Connection, id: &str, name: &str, workspace_path: Option<&str>) -> Result<Value, CommandError> {
+    let exists: bool = conn
+        .query_row("SELECT EXISTS(SELECT 1 FROM projects WHERE id = ?1)", rusqlite::params![id], |r| r.get(0))
+        .unwrap_or(false);
+    if exists {
+        return Err(CommandError::new("PROJECT_EXISTS", format!("Project '{id}' already exists")));
+    }
+    let timestamp = now_iso();
+    conn.execute(
+        "INSERT INTO projects (id, name, workspace_path, labels, next_task_number, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)",
+        rusqlite::params![id, name, workspace_path, DEFAULT_PROJECT_LABELS_JSON, timestamp, timestamp],
+    )?;
+    conn.query_row(
+        "SELECT id, name, workspace_path, labels, created_at, updated_at FROM projects WHERE id = ?1",
+        rusqlite::params![id],
+        |row| {
+            Ok(project_full_json(
+                row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?, row.get(5)?,
+            ))
+        },
+    )
+    .map_err(|e| CommandError::new("DB_ERROR", format!("创建项目后读取失败：{e}")))
+}
+
+/// 项目存在性（taskctl issue create 前置校验）
+pub fn project_exists(conn: &Connection, id: &str) -> bool {
+    conn.query_row("SELECT id FROM projects WHERE id = ?1", rusqlite::params![id], |_| Ok(()))
+        .is_ok()
+}
+
+/// 活动流聚合读取（taskctl activity list；对齐 Node #listActivityFeed）：
+/// thread_id 圈定会话名下任务（含人机双方变更）；缺省跨全部任务。
+/// since_id 为全局游标——只返回该活动之后（rowid 更大）的记录；未知游标视为无游标。
+/// 附带 taskIdentifier/taskTitle 便于跨任务定位。
+pub fn list_activity_feed(conn: &Connection, thread_id: Option<&str>, since_id: Option<&str>) -> Vec<Value> {
+    let mut clauses: Vec<String> = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(t) = thread_id.filter(|s| !s.is_empty()) {
+        clauses.push("t.thread_id = ?".into());
+        params.push(Box::new(t.to_string()));
+    }
+    if let Some(s) = since_id.filter(|s| !s.is_empty()) {
+        clauses.push("a.rowid > COALESCE((SELECT rowid FROM task_activities WHERE id = ?), -1)".into());
+        params.push(Box::new(s.to_string()));
+    }
+    let where_sql = if clauses.is_empty() {
+        String::new()
+    } else {
+        format!("WHERE {}", clauses.join(" AND "))
+    };
+    let sql = format!(
+        "SELECT a.id, a.task_id, a.actor_type, a.actor_id, a.actor_name, a.actor_avatar_url,
+                a.changes, a.created_at, t.identifier, t.title
+         FROM task_activities a
+         JOIN tasks t ON t.id = a.task_id
+         {where_sql}
+         ORDER BY a.created_at, a.rowid"
+    );
+    let Ok(mut stmt) = conn.prepare(&sql) else {
+        return Vec::new();
+    };
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params.iter().map(|p| p.as_ref()).collect();
+    let Ok(rows) = stmt.query_map(param_refs.as_slice(), |row| {
+        let mut activity = activity_json(
+            row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?,
+            row.get(5)?, row.get(6)?, row.get(7)?,
+        );
+        activity["taskIdentifier"] = json!(row.get::<_, String>(8)?);
+        activity["taskTitle"] = json!(row.get::<_, String>(9)?);
+        Ok(activity)
+    }) else {
+        return Vec::new();
+    };
+    rows.filter_map(|r| r.ok()).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1579,7 +2182,7 @@ mod tests {
     #[test]
     fn create_task_writes_local_user_and_widget_thread() {
         let conn = test_db();
-        let task = create_task(&conn, "测试任务", "backlog", "high", Some("2026-12-31")).unwrap();
+        let task = create_task(&conn, "测试任务", "backlog", "high", Some("2026-12-31"), &local_user_actor()).unwrap();
         assert_eq!(task["identifier"], "LOCAL-1");
         assert_eq!(task["status"], "backlog");
         assert_eq!(task["priority"], "high");
@@ -1603,13 +2206,13 @@ mod tests {
     #[test]
     fn create_task_validates_fields() {
         let conn = test_db();
-        assert_eq!(create_task(&conn, "", "backlog", "none", None).unwrap_err().code, "INVALID_FIELD");
+        assert_eq!(create_task(&conn, "", "backlog", "none", None, &local_user_actor()).unwrap_err().code, "INVALID_FIELD");
         assert_eq!(
-            create_task(&conn, "标题", "bad_status", "none", None).unwrap_err().code,
+            create_task(&conn, "标题", "bad_status", "none", None, &local_user_actor()).unwrap_err().code,
             "INVALID_FIELD"
         );
         assert_eq!(
-            create_task(&conn, "标题", "backlog", "bad_priority", None).unwrap_err().code,
+            create_task(&conn, "标题", "backlog", "bad_priority", None, &local_user_actor()).unwrap_err().code,
             "INVALID_FIELD"
         );
     }
@@ -1619,7 +2222,7 @@ mod tests {
     /// agent 徽标对真实数据不渲染（mock 数据自带字段掩盖了缺口）
     fn list_tasks_includes_creator_type() {
         let conn = test_db();
-        create_task(&conn, "用户任务", "todo", "none", None).unwrap();
+        create_task(&conn, "用户任务", "todo", "none", None, &local_user_actor()).unwrap();
         // 直接写入一条 agent 任务（对齐 taskctl 的 CODEX_AGENT_ACTOR 写入口径）
         conn.execute(
             "INSERT INTO tasks (id, identifier, project_id, title, description, status, priority,
@@ -1641,9 +2244,9 @@ mod tests {
     #[test]
     fn move_task_updates_status_version_and_activity() {
         let conn = test_db();
-        let task = create_task(&conn, "流转任务", "todo", "none", None).unwrap();
+        let task = create_task(&conn, "流转任务", "todo", "none", None, &local_user_actor()).unwrap();
         let id = task["id"].as_str().unwrap().to_string();
-        let moved = move_task(&conn, &id, 1, "in_progress", None).unwrap();
+        let moved = move_task(&conn, &id, 1, "in_progress", None, Some(WIDGET_THREAD_ID), &local_user_actor()).unwrap();
         assert_eq!(moved["status"], "in_progress");
         assert_eq!(moved["version"], 2);
         // 状态变化必须写活动流（Node 端 getTask 读取）
@@ -1662,24 +2265,24 @@ mod tests {
     #[test]
     fn move_task_rejects_stale_version() {
         let conn = test_db();
-        let task = create_task(&conn, "冲突任务", "todo", "none", None).unwrap();
+        let task = create_task(&conn, "冲突任务", "todo", "none", None, &local_user_actor()).unwrap();
         let id = task["id"].as_str().unwrap().to_string();
-        move_task(&conn, &id, 1, "in_progress", None).unwrap();
+        move_task(&conn, &id, 1, "in_progress", None, Some(WIDGET_THREAD_ID), &local_user_actor()).unwrap();
         // 用过期 version 1 再次流转 → VERSION_CONFLICT
-        let conflict = move_task(&conn, &id, 1, "done", None).unwrap_err();
+        let conflict = move_task(&conn, &id, 1, "done", None, Some(WIDGET_THREAD_ID), &local_user_actor()).unwrap_err();
         assert_eq!(conflict.code, "VERSION_CONFLICT");
         // 任务不存在
-        assert_eq!(move_task(&conn, "no-such", 1, "done", None).unwrap_err().code, "TASK_NOT_FOUND");
+        assert_eq!(move_task(&conn, "no-such", 1, "done", None, Some(WIDGET_THREAD_ID), &local_user_actor()).unwrap_err().code, "TASK_NOT_FOUND");
     }
 
     #[test]
     fn issue_detail_returns_task_comments_and_activities() {
         let conn = test_db();
-        let task = create_task(&conn, "详情任务", "todo", "high", None).unwrap();
+        let task = create_task(&conn, "详情任务", "todo", "high", None, &local_user_actor()).unwrap();
         let id = task["id"].as_str().unwrap().to_string();
         add_comment(&conn, &id, "第一条评论").unwrap();
         add_comment(&conn, &id, "第二条评论").unwrap();
-        move_task(&conn, &id, 1, "in_progress", None).unwrap();
+        move_task(&conn, &id, 1, "in_progress", None, Some(WIDGET_THREAD_ID), &local_user_actor()).unwrap();
 
         let detail = issue_detail(&conn, &id).unwrap();
         assert_eq!(detail["task"]["title"], "详情任务");
@@ -1703,7 +2306,7 @@ mod tests {
     #[test]
     fn add_comment_validates_and_trims() {
         let conn = test_db();
-        let task = create_task(&conn, "评论任务", "todo", "none", None).unwrap();
+        let task = create_task(&conn, "评论任务", "todo", "none", None, &local_user_actor()).unwrap();
         let id = task["id"].as_str().unwrap().to_string();
         // 空评论拒绝（纯空白也拒绝）
         assert_eq!(add_comment(&conn, &id, "").unwrap_err().code, "INVALID_FIELD");
@@ -1726,21 +2329,21 @@ mod tests {
     #[test]
     fn archive_restore_delete_lifecycle() {
         let conn = test_db();
-        let task = create_task(&conn, "归档生命周期", "todo", "none", None).unwrap();
+        let task = create_task(&conn, "归档生命周期", "todo", "none", None, &local_user_actor()).unwrap();
         let id = task["id"].as_str().unwrap().to_string();
         // 未归档：删除/恢复均拒绝（对齐上游）
         assert_eq!(delete_task(&conn, &id, 1).unwrap_err().code, "TASK_NOT_ARCHIVED");
-        assert_eq!(restore_task(&conn, &id, 1).unwrap_err().code, "TASK_NOT_ARCHIVED");
+        assert_eq!(restore_task(&conn, &id, 1, &local_user_actor()).unwrap_err().code, "TASK_NOT_ARCHIVED");
         // 归档 → archivedAt 非空 + version+1
-        let archived = archive_task(&conn, &id, 1).unwrap();
+        let archived = archive_task(&conn, &id, 1, &local_user_actor()).unwrap();
         assert!(archived["archivedAt"].as_str().is_some());
         // 重复归档（version 过期）→ 冲突
-        assert_eq!(archive_task(&conn, &id, 1).unwrap_err().code, "VERSION_CONFLICT");
+        assert_eq!(archive_task(&conn, &id, 1, &local_user_actor()).unwrap_err().code, "VERSION_CONFLICT");
         // 恢复成功
-        let restored = restore_task(&conn, &id, 2).unwrap();
+        let restored = restore_task(&conn, &id, 2, &local_user_actor()).unwrap();
         assert!(restored["archivedAt"].is_null());
         // 归档后删除成功
-        archive_task(&conn, &id, 3).unwrap();
+        archive_task(&conn, &id, 3, &local_user_actor()).unwrap();
         let deleted = delete_task(&conn, &id, 4).unwrap();
         assert_eq!(deleted["ok"], serde_json::json!(true));
         // 删除后不可再查
@@ -1750,10 +2353,10 @@ mod tests {
     #[test]
     fn project_label_crud_and_task_cleanup() {
         let conn = test_db();
-        let task = create_task(&conn, "带标签", "todo", "none", None).unwrap();
+        let task = create_task(&conn, "带标签", "todo", "none", None, &local_user_actor()).unwrap();
         let id = task["id"].as_str().unwrap().to_string();
         // update_task 加标签 → 项目标签库自动合并
-        update_task(&conn, &id, 1, &serde_json::json!({ "labels": ["自定义"] })).unwrap();
+        update_task(&conn, &id, 1, &serde_json::json!({ "labels": ["自定义"] }), None, &local_user_actor()).unwrap();
         let labels: String = conn.query_row("SELECT labels FROM projects WHERE id = 'local'", [], |r| r.get(0)).unwrap();
         assert!(labels.contains("自定义"));
         // 删除标签库条目 → 任务 labels 同步清除 + version+1
@@ -1778,8 +2381,8 @@ mod tests {
     #[test]
     fn relation_endpoints_and_constraints() {
         let conn = test_db();
-        let a = create_task(&conn, "任务A", "todo", "none", None).unwrap();
-        let b = create_task(&conn, "任务B", "todo", "none", None).unwrap();
+        let a = create_task(&conn, "任务A", "todo", "none", None, &local_user_actor()).unwrap();
+        let b = create_task(&conn, "任务B", "todo", "none", None, &local_user_actor()).unwrap();
         let a_id = a["id"].as_str().unwrap().to_string();
         let b_id = b["id"].as_str().unwrap().to_string();
         // parent：B 的父是 A
@@ -1795,7 +2398,7 @@ mod tests {
         let cycle_err = add_relation(&conn, &b_id, 2, "parent", &a_id).unwrap_err();
         assert_eq!(cycle_err.code, "INVALID_FIELD");
         // related 去重（source<target 规范化）；add_relation 双方 version+1：A/B 现为 v2
-        let c = create_task(&conn, "任务C", "todo", "none", None).unwrap();
+        let c = create_task(&conn, "任务C", "todo", "none", None, &local_user_actor()).unwrap();
         let c_id = c["id"].as_str().unwrap().to_string();
         add_relation(&conn, &a_id, 2, "related", &c_id).unwrap(); // A→v3, C→v2
         // 重复添加（反向）→ RELATION_EXISTS
@@ -1823,7 +2426,7 @@ mod tests {
         let tmp = std::env::temp_dir().join(format!("tb-att-test-{}", uuid::Uuid::new_v4()));
         std::env::set_var("VIBE_TASKDECK_DATA_DIR", &tmp);
         let conn = test_db();
-        let task = create_task(&conn, "带附件", "todo", "none", None).unwrap();
+        let task = create_task(&conn, "带附件", "todo", "none", None, &local_user_actor()).unwrap();
         let id = task["id"].as_str().unwrap().to_string();
         use base64::Engine;
         let content = base64::engine::general_purpose::STANDARD.encode(b"hello attachment");
@@ -1853,4 +2456,288 @@ mod tests {
         assert_eq!(&stamp[19..20], ".");
         assert_eq!(&stamp[23..], "Z");
     }
+
+    /* ==== CLI（taskctl）口径扩展 ==== */
+
+    /// CLI 宽形状必须是 27 字段全集（对齐 cli/database.mjs #taskJson 的键集合）
+    #[test]
+    fn task_full_json_has_all_27_fields() {
+        let conn = test_db();
+        let actor = Actor::agent("codex-agent", "Codex Agent");
+        let spec = TaskCreateSpec {
+            project_id: "local",
+            title: "宽形状任务",
+            description: "描述",
+            status: "todo",
+            priority: "high",
+            labels: &["cli".to_string(), "m3".to_string()],
+            thread_id: Some("th-wide"),
+            start_date: Some("2026-08-01"),
+            due_date: Some("2026-08-31"),
+            assignee: None,
+        };
+        let task = create_task_ex(&conn, &spec, &actor).unwrap();
+        let keys: Vec<&str> = task.as_object().unwrap().keys().map(|k| k.as_str()).collect();
+        let expected = [
+            "id", "identifier", "projectId", "title", "description", "status", "priority",
+            "labels", "sortOrder", "threadId", "creatorType", "creatorId", "creatorName",
+            "creatorAvatarUrl", "assigneeType", "assigneeId", "assigneeName",
+            "assigneeAvatarUrl", "workflowId", "developmentContext", "recurrence",
+            "startDate", "dueDate", "archivedAt", "version", "createdAt", "updatedAt",
+        ];
+        assert_eq!(keys.len(), 27);
+        for key in expected {
+            assert!(task.as_object().unwrap().contains_key(key), "缺字段：{key}");
+        }
+        // 关键值语义：actor 落 creator/assignee、labels 数组、日期、version 从 1 起
+        assert_eq!(task["creatorId"], "codex-agent");
+        assert_eq!(task["creatorType"], "agent");
+        assert_eq!(task["assigneeId"], "codex-agent");
+        assert_eq!(task["threadId"], "th-wide");
+        assert_eq!(task["labels"], json!(["cli", "m3"]));
+        assert_eq!(task["startDate"], "2026-08-01");
+        assert_eq!(task["dueDate"], "2026-08-31");
+        assert_eq!(task["version"], 1);
+        assert_eq!(task["identifier"], "LOCAL-1");
+        assert!(task["developmentContext"].is_null());
+        assert!(task["recurrence"].is_null());
+        assert!(task["archivedAt"].is_null());
+        assert!(task["creatorAvatarUrl"].is_null());
+        // 自定义 assignee 覆盖（--assignee 扩展）
+        let assignee = Actor::agent("claude-agent", "Claude");
+        let spec2 = TaskCreateSpec {
+            project_id: "local",
+            title: "指定负责人",
+            description: "",
+            status: "backlog",
+            priority: "none",
+            labels: &[],
+            thread_id: Some("th-wide"),
+            start_date: None,
+            due_date: None,
+            assignee: Some(&assignee),
+        };
+        let task2 = create_task_ex(&conn, &spec2, &actor).unwrap();
+        assert_eq!(task2["creatorId"], "codex-agent");
+        assert_eq!(task2["assigneeId"], "claude-agent");
+    }
+
+    /// create_task（挂件口径）actor 参数化：传 local_user_actor 与旧版固定行为一致
+    #[test]
+    fn create_task_widget_path_uses_passed_actor() {
+        let conn = test_db();
+        let task = create_task(&conn, "挂件任务", "todo", "none", None, &local_user_actor()).unwrap();
+        assert_eq!(task["creatorType"], "user");
+        assert_eq!(task["threadId"], "taskboard-widget");
+        let row: (String, String) = conn
+            .query_row(
+                "SELECT creator_id, assignee_id FROM tasks WHERE id = ?1",
+                rusqlite::params![task["id"].as_str().unwrap()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(row, ("local-user".to_string(), "local-user".to_string()));
+    }
+
+    /// activity list 聚合语义：thread 过滤圈会话 + since-id 游标只取其后（rowid 序）
+    #[test]
+    fn list_activity_feed_thread_filter_and_cursor() {
+        let conn = test_db();
+        let agent = Actor::agent("codex-agent", "Codex Agent");
+        let mk = |title: &str, thread: &str| {
+            let spec = TaskCreateSpec {
+                project_id: "local", title, description: "", status: "todo", priority: "none",
+                labels: &[], thread_id: Some(thread), start_date: None, due_date: None, assignee: None,
+            };
+            create_task_ex(&conn, &spec, &agent).unwrap()
+        };
+        let a = mk("会话A任务", "th-a");
+        let b = mk("会话B任务", "th-b");
+        let a_id = a["id"].as_str().unwrap().to_string();
+        let b_id = b["id"].as_str().unwrap().to_string();
+        // A、B 各流转一次（agent actor 落活动流）
+        move_task(&conn, &a_id, 1, "in_progress", None, Some("th-a"), &agent).unwrap();
+        move_task(&conn, &b_id, 1, "done", None, Some("th-b"), &agent).unwrap();
+
+        // 无过滤：两条（跨全部任务）
+        let all = list_activity_feed(&conn, None, None);
+        assert_eq!(all.len(), 2);
+        // 活动项字段：id/taskId/taskIdentifier/taskTitle/actorType/actorId/actorName/
+        // actorAvatarUrl/changes(数组)/createdAt
+        let first = &all[0];
+        for key in ["id", "taskId", "taskIdentifier", "taskTitle", "actorType", "actorId",
+                    "actorName", "actorAvatarUrl", "changes", "createdAt"] {
+            assert!(first.as_object().unwrap().contains_key(key), "活动缺字段：{key}");
+        }
+        assert_eq!(first["actorId"], "codex-agent");
+        assert_eq!(first["actorType"], "agent");
+        assert!(first["changes"].is_array());
+        assert_eq!(first["changes"][0]["field"], "status");
+        assert_eq!(first["changes"][0]["before"], "todo");
+
+        // thread 过滤：只看 th-a 会话（按任务 threadId 归属聚合）
+        let only_a = list_activity_feed(&conn, Some("th-a"), None);
+        assert_eq!(only_a.len(), 1);
+        assert_eq!(only_a[0]["taskId"], json!(a_id));
+        assert_eq!(only_a[0]["taskIdentifier"], a["identifier"]);
+
+        // since-id 游标：以末条活动 id 为游标 → 其后为空
+        let last_id = all[1]["id"].as_str().unwrap().to_string();
+        assert!(list_activity_feed(&conn, None, Some(&last_id)).is_empty());
+        // 以首条活动 id 为游标 → 只剩末条
+        let first_id = all[0]["id"].as_str().unwrap().to_string();
+        let after_first = list_activity_feed(&conn, None, Some(&first_id));
+        assert_eq!(after_first.len(), 1);
+        assert_eq!(after_first[0]["id"], json!(last_id));
+        // 未知游标视为无游标（COALESCE -1）
+        assert_eq!(list_activity_feed(&conn, None, Some("no-such-activity")).len(), 2);
+    }
+
+    /// issue get 宽形状：task 27 字段 + comments + activities
+    #[test]
+    fn get_task_full_shape() {
+        let conn = test_db();
+        let agent = Actor::agent("codex-agent", "Codex Agent");
+        let spec = TaskCreateSpec {
+            project_id: "local", title: "详情任务", description: "正文", status: "todo",
+            priority: "none", labels: &[], thread_id: Some("th-detail"),
+            start_date: None, due_date: None, assignee: None,
+        };
+        let task = create_task_ex(&conn, &spec, &agent).unwrap();
+        let id = task["id"].as_str().unwrap().to_string();
+        move_task(&conn, &id, 1, "in_progress", None, Some("th-detail"), &agent).unwrap();
+
+        let detail = get_task_full(&conn, &id).unwrap();
+        assert_eq!(detail.as_object().unwrap().len(), 29); // 27 + comments + activities
+        assert_eq!(detail["activities"].as_array().unwrap().len(), 1);
+        assert_eq!(detail["activities"][0]["changes"][0]["field"], "status");
+        assert_eq!(detail["comments"], json!([]));
+        // identifier 也能定位
+        assert!(get_task_full(&conn, "LOCAL-1").is_some());
+        assert!(get_task_full(&conn, "no-such").is_none());
+    }
+
+    /// update_task：thread 随写 + agent actor 落活动流（挂件传 None 不动 thread）
+    #[test]
+    fn update_task_thread_and_actor() {
+        let conn = test_db();
+        let agent = Actor::agent("codex-agent", "Codex Agent");
+        let spec = TaskCreateSpec {
+            project_id: "local", title: "更新任务", description: "", status: "todo",
+            priority: "none", labels: &[], thread_id: Some("th-old"),
+            start_date: None, due_date: None, assignee: None,
+        };
+        let task = create_task_ex(&conn, &spec, &agent).unwrap();
+        let id = task["id"].as_str().unwrap().to_string();
+
+        // CLI：thread 变化随写 + agent actor 活动流
+        update_task(&conn, &id, 1, &json!({ "priority": "urgent" }), Some("th-new"), &agent).unwrap();
+        let updated = get_task_wide(&conn, &id).unwrap();
+        assert_eq!(updated["threadId"], "th-new");
+        assert_eq!(updated["priority"], "urgent");
+        assert_eq!(updated["version"], 2);
+        let (actor_id, changes): (String, String) = conn
+            .query_row(
+                "SELECT actor_id, changes FROM task_activities WHERE task_id = ?1",
+                rusqlite::params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(actor_id, "codex-agent");
+        assert!(changes.contains("\"field\":\"priority\""));
+        assert!(changes.contains("\"before\":\"none\""));
+        assert!(changes.contains("\"after\":\"urgent\""));
+
+        // 挂件：thread=None 不改归属；本地用户 actor
+        update_task(&conn, &id, 2, &json!({ "title": "改标题" }), None, &local_user_actor()).unwrap();
+        let after = get_task_wide(&conn, &id).unwrap();
+        assert_eq!(after["threadId"], "th-new");
+        let (actor_id2, _): (String, String) = conn
+            .query_row(
+                "SELECT actor_id, changes FROM task_activities WHERE task_id = ?1 ORDER BY rowid DESC LIMIT 1",
+                rusqlite::params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(actor_id2, "local-user");
+
+        // assignee 更新（CLI 扩展）：agent 三列 + 活动流 diff
+        update_task(&conn, &id, 3, &json!({ "assignee": "claude-agent" }), None, &agent).unwrap();
+        let assigned = get_task_wide(&conn, &id).unwrap();
+        assert_eq!(assigned["assigneeId"], "claude-agent");
+        assert_eq!(assigned["assigneeType"], "agent");
+        assert_eq!(assigned["assigneeName"], "claude-agent");
+    }
+
+    /// project create / list 宽形状 + PROJECT_EXISTS 冲突
+    #[test]
+    fn create_project_and_list_full() {
+        let conn = test_db();
+        let project = create_project(&conn, "my-proj", "我的项目", Some("D:/work")).unwrap();
+        assert_eq!(project["id"], "my-proj");
+        assert_eq!(project["name"], "我的项目");
+        assert_eq!(project["workspacePath"], "D:/work");
+        assert!(project["labels"].is_array());
+        assert!(project["createdAt"].is_string());
+        // id 冲突 → PROJECT_EXISTS（CLI 映射 409 → 退出码 5）
+        assert_eq!(create_project(&conn, "my-proj", "再来", None).unwrap_err().code, "PROJECT_EXISTS");
+        // 宽形状列表含 local seed + 新项目
+        let projects = list_projects_full(&conn);
+        assert_eq!(projects.len(), 2);
+        let local = projects.iter().find(|p| p["id"] == "local").unwrap();
+        assert!(local["workspacePath"].is_null());
+    }
+
+    /// list_tasks_full：过滤器 + archived 语义（默认 false / true / all）
+    #[test]
+    fn list_tasks_full_filters() {
+        let conn = test_db();
+        let agent = Actor::agent("codex-agent", "Codex Agent");
+        let mk = |title: &str, status: &str, priority: &str, labels: &[String], thread: &str| {
+            let spec = TaskCreateSpec {
+                project_id: "local", title, description: "", status, priority,
+                labels, thread_id: Some(thread), start_date: None, due_date: None, assignee: None,
+            };
+            create_task_ex(&conn, &spec, &agent).unwrap()
+        };
+        let a = mk("搜索关键词甲", "todo", "high", &["标签A".to_string()], "th-1");
+        let b = mk("普通任务", "backlog", "none", &[], "th-2");
+        let a_id = a["id"].as_str().unwrap().to_string();
+        archive_task(&conn, &a_id, 1, &agent).unwrap();
+
+        let none_filter = TaskListFilter {
+            project_id: None, status: None, priority: None, assignee_id: None, creator_id: None,
+            label: None, thread_id: None, archived: Some(false), search: None,
+        };
+        // 默认只看未归档
+        let active = list_tasks_full(&conn, &none_filter);
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0]["title"], "普通任务");
+        // all：含归档
+        let all = list_tasks_full(&conn, &TaskListFilter { archived: None, ..none_filter });
+        assert_eq!(all.len(), 2);
+        // 只看归档
+        let archived = list_tasks_full(&conn, &TaskListFilter { archived: Some(true), ..none_filter });
+        assert_eq!(archived.len(), 1);
+        assert_eq!(archived[0]["title"], "搜索关键词甲");
+        // 状态过滤
+        let todo = list_tasks_full(&conn, &TaskListFilter { status: Some("todo"), ..none_filter });
+        assert!(todo.is_empty()); // 唯一 todo 已归档
+        // 标签过滤（JSON 元素精确匹配）
+        let labeled = list_tasks_full(&conn, &TaskListFilter { label: Some("标签A"), archived: None, ..none_filter });
+        assert_eq!(labeled.len(), 1);
+        // 搜索（标题包含）
+        let searched = list_tasks_full(&conn, &TaskListFilter { search: Some("关键词"), archived: None, ..none_filter });
+        assert_eq!(searched.len(), 1);
+        assert_eq!(searched[0]["title"], "搜索关键词甲");
+        // thread 过滤
+        let th1 = list_tasks_full(&conn, &TaskListFilter { thread_id: Some("th-1"), archived: None, ..none_filter });
+        assert_eq!(th1.len(), 1);
+        // assignee/creator 过滤（agent 建的都落 codex-agent）
+        let mine = list_tasks_full(&conn, &TaskListFilter { creator_id: Some("codex-agent"), archived: None, ..none_filter });
+        assert_eq!(mine.len(), 2);
+        void_value(&b);
+    }
+
+    fn void_value(_v: &Value) {}
 }

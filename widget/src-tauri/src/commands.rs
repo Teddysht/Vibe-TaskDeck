@@ -188,6 +188,7 @@ pub fn create_task(
         status.as_deref().unwrap_or("backlog"),
         priority.as_deref().unwrap_or("none"),
         due_date.as_deref().filter(|s| !s.is_empty()),
+        &db::local_user_actor(),
     )?;
     let _ = app.emit("task-created", ());
     Ok(task)
@@ -208,7 +209,7 @@ pub fn move_task(
         .0
         .lock()
         .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
-    let task = db::move_task(&conn, &id, version, &status, sort_order)?;
+    let task = db::move_task(&conn, &id, version, &status, sort_order, Some(db::WIDGET_THREAD_ID), &db::local_user_actor())?;
     let _ = app.emit("task-moved", ());
     Ok(task)
 }
@@ -226,7 +227,7 @@ pub fn update_task(
         .0
         .lock()
         .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
-    let task = db::update_task(&conn, &id, version, &changes)?;
+    let task = db::update_task(&conn, &id, version, &changes, None, &db::local_user_actor())?;
     let _ = app.emit("task-updated", serde_json::json!({ "taskId": id }));
     Ok(task)
 }
@@ -243,7 +244,7 @@ pub fn archive_task(
         .0
         .lock()
         .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
-    let task = db::archive_task(&conn, &id, version)?;
+    let task = db::archive_task(&conn, &id, version, &db::local_user_actor())?;
     let _ = app.emit("task-archived", serde_json::json!({ "taskId": id }));
     Ok(task)
 }
@@ -260,7 +261,7 @@ pub fn restore_task(
         .0
         .lock()
         .map_err(|_| db::CommandError { code: "DB_ERROR", message: "数据库连接锁中毒".into() })?;
-    let task = db::restore_task(&conn, &id, version)?;
+    let task = db::restore_task(&conn, &id, version, &db::local_user_actor())?;
     let _ = app.emit("task-restored", serde_json::json!({ "taskId": id }));
     Ok(task)
 }
