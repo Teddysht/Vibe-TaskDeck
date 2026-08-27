@@ -286,6 +286,43 @@ fn now_iso() -> String {
     )
 }
 
+/// 当前时刻回退 offset_secs 秒的 UTC ISO（毫秒 3 位 + Z，与 now_iso 同格式）。
+/// CLI report 的时间窗过滤用（ISO 定长格式可安全按字典序比较）。
+pub fn now_iso_minus(offset_secs: i64) -> String {
+    let elapsed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    let target = (elapsed.as_secs() as i64 - offset_secs).max(0);
+    let millis = elapsed.subsec_millis();
+    let days = target.div_euclid(86_400);
+    let rem = target.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    format!(
+        "{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{millis:03}Z",
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
+}
+
+/// 数据目录（VIBE_TASKDECK_DATA_DIR > %APPDATA%\Vibe-TaskDeck）。
+/// taskctl sync 游标文件等 CLI 侧状态文件的落点（与 resolve_db_path 同解析规则）。
+pub fn cli_data_dir() -> Result<std::path::PathBuf, String> {
+    if let Ok(dir) = std::env::var("VIBE_TASKDECK_DATA_DIR") {
+        let dir = dir.trim();
+        if !dir.is_empty() {
+            return Ok(PathBuf::from(dir));
+        }
+    }
+    if let Ok(appdata) = std::env::var("APPDATA") {
+        let appdata = appdata.trim();
+        if !appdata.is_empty() {
+            return Ok(PathBuf::from(appdata).join("Vibe-TaskDeck"));
+        }
+    }
+    Err("无法定位数据目录：请设置 VIBE_TASKDECK_DATA_DIR 环境变量".into())
+}
+
 /// epoch 天数 → 公历年月日（Howard Hinnant civil_from_days 算法）
 fn civil_from_days(days: i64) -> (i64, u32, u32) {
     let z = days + 719_468;

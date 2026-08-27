@@ -91,7 +91,8 @@ check('project create 缺 --name → usage 错误（exit 2）',
 // ---- 3. issue create ----
 const mk = (title, extra = []) => asJson(run(['issue', 'create', '--project', 'local',
   '--title', title, '--thread-id', 't-cli', ...extra]));
-const a = mk('冒烟任务A');
+// v0.5.0 move 护栏：backlog→in_progress 需 --force，故冒烟主任务直接建为 todo
+const a = mk('冒烟任务A', ['--status', 'todo']);
 const b = mk('冒烟任务B');
 const c = mk('冒烟任务C');
 check('issue create 退出码 0 且 identifier 从 1 起', Boolean(a?.task && b?.task && c?.task)
@@ -291,6 +292,84 @@ check('context current 无命中回退 local 项目',
 const del = run(['issue', 'delete', a?.task?.id]);
 check('issue delete → UNSUPPORTED_LOCAL（exit 2）',
   del.status === 2 && asErr(del)?.error?.code === 'UNSUPPORTED_LOCAL');
+
+// ---- 13. v0.5.0 AI 工作流：move 护栏 + claim + fields + sync + report ----
+const guardBacklog = mk('护栏-backlog');
+const gbMove = run(['issue', 'move', guardBacklog?.task?.id, '--status', 'in_progress', '--thread-id', 't-cli']);
+check('move 护栏：backlog→in_progress 拒绝（TRANSITION_GUARD exit 4）',
+  gbMove.status === 4 && asErr(gbMove)?.error?.code === 'TRANSITION_GUARD');
+const gbForce = run(['issue', 'move', guardBacklog?.task?.id, '--status', 'in_progress',
+  '--thread-id', 't-cli', '--force']);
+check('move 护栏：--force 逃生（exit 0）', gbForce.status === 0);
+const gbOther = run(['issue', 'move', guardBacklog?.task?.id, '--status', 'in_review', '--thread-id', 't-other']);
+check('move 护栏：他人 in_progress 任务 → CLAIMED_BY_OTHER（exit 5）',
+  gbOther.status === 5 && asErr(gbOther)?.error?.code === 'CLAIMED_BY_OTHER');
+const gbOtherForce = run(['issue', 'move', guardBacklog?.task?.id, '--status', 'in_review',
+  '--thread-id', 't-other', '--force']);
+check('move 护栏：他人任务 --force 逃生（exit 0）', gbOtherForce.status === 0);
+
+const claimTodo = mk('claim-todo', ['--status', 'todo']);
+const claim1 = run(['issue', 'claim', claimTodo?.task?.id, '--thread-id', 't-cli']);
+check('claim：todo→in_progress 认领成功（claimed=true, version+1）',
+  claim1.status === 0 && asJson(claim1)?.claimed === true
+    && asJson(claim1)?.task?.status === 'in_progress' && asJson(claim1)?.task?.version === 2);
+const claim2 = run(['issue', 'claim', claimTodo?.task?.id, '--thread-id', 't-cli']);
+check('claim：幂等（claimed=false 不 bump version）',
+  claim2.status === 0 && asJson(claim2)?.claimed === false
+    && asJson(claim2)?.reason === 'already-claimed-by-this-thread'
+    && asJson(claim2)?.task?.version === 2);
+const claimOther = run(['issue', 'claim', claimTodo?.task?.id, '--thread-id', 't-other']);
+check('claim：他人持有 → CLAIM_CONFLICT（exit 5，details 带持有者）',
+  claimOther.status === 5 && asErr(claimOther)?.error?.code === 'CLAIM_CONFLICT'
+    && (asErr(claimOther)?.error?.details || '').includes('t-cli'));
+const claimBacklog = mk('claim-backlog');
+const claimBk = run(['issue', 'claim', claimBacklog?.task?.id, '--thread-id', 't-cli']);
+check('claim：backlog 拒绝（CLAIM_REJECTED exit 4）',
+  claimBk.status === 4 && asErr(claimBk)?.error?.code === 'CLAIM_REJECTED');
+const claimBkForce = run(['issue', 'claim', claimBacklog?.task?.id, '--thread-id', 't-cli', '--force']);
+check('claim：backlog --force 认领（exit 0）',
+  claimBkForce.status === 0 && asJson(claimBkForce)?.claimed === true);
+
+const fieldsList = run(['issue', 'list', '--fields', 'id,identifier,title,status', '--json']);
+const fieldsTasks = asJson(fieldsList)?.tasks;
+check('issue list --fields 紧凑投影（键集合精确）',
+  fieldsList.status === 0 && Array.isArray(fieldsTasks) && fieldsTasks.length > 0
+    && fieldsTasks.every((t) => JSON.stringify(Object.keys(t).sort())
+      === JSON.stringify(['id', 'identifier', 'status', 'title'])));
+const fieldsBad = run(['issue', 'list', '--fields', 'id,bogus']);
+check('issue list --fields 未知字段 → usage 错误（exit 2）',
+  fieldsBad.status === 2 && asErr(fieldsBad)?.error?.code === 'USAGE_ERROR');
+const fieldsGet = run(['issue', 'get', claimTodo?.task?.id, '--fields', 'id,status,version']);
+check('issue get --fields 投影',
+  fieldsGet.status === 0 && JSON.stringify(Object.keys(asJson(fieldsGet)?.task || {}).sort())
+    === JSON.stringify(['id', 'status', 'version']));
+
+const sync1 = run(['sync', '--thread-id', 't-cli']);
+const sync1Json = asJson(sync1);
+check('sync 首跑：mine 非空 + 活动增量 + nextSinceId',
+  sync1.status === 0 && sync1Json?.mine?.length > 0
+    && sync1Json?.activities?.length > 0 && typeof sync1Json?.nextSinceId === 'string');
+check('sync 首跑：游标文件落盘 <dataDir>/taskctl-sync.json',
+  existsSync(path.join(dataDir, 'taskctl-sync.json')));
+const sync2 = run(['sync', '--thread-id', 't-cli']);
+check('sync 二跑：增量活动为 0 + lastSyncAt 回传',
+  sync2.status === 0 && asJson(sync2)?.activities?.length === 0
+    && typeof asJson(sync2)?.lastSyncAt === 'string');
+const sync3 = run(['sync', '--thread-id', 't-cli', '--reset']);
+check('sync --reset：游标重置（活动非 0）',
+  sync3.status === 0 && asJson(sync3)?.activities?.length > 0);
+
+const rep = run(['report', '--thread-id', 't-cli']);
+const repJson = asJson(rep);
+check('report：summary.byStatus 七状态 + total',
+  rep.status === 0 && repJson?.summary?.total > 0
+    && Object.keys(repJson?.summary?.byStatus || {}).length === 7);
+check('report：时间窗内活动非空 + 紧凑任务字段',
+  repJson?.recentActivities?.length > 0
+    && repJson?.overdue.every((t) => Object.keys(t).length <= 8)
+    && repJson?.blocked.every((t) => Object.keys(t).length <= 8));
+const repBad = run(['report', '--window', 'abc']);
+check('report 非法 --window → usage 错误（exit 2）', repBad.status === 2);
 
 rmSync(dataDir, { recursive: true, force: true });
 console.log(failed ? `\n冒烟失败 ${failed} 项` : '\n冒烟全部通过');

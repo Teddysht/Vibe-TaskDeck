@@ -17,9 +17,36 @@ import signal
 import subprocess
 import sys
 import time
+import uuid
 
 MIN_NODE = (22, 5)
 WIDGET_EXE_NAME = "taskdeck-widget.exe"
+
+# thread-id 自动注入的目标命令（写操作，CLI 要求 --thread-id；issue list 的
+# --thread-id 是过滤语义，不注入——避免悄悄改变读行为）
+THREAD_ID_COMMANDS = {
+    ("issue", "create"), ("issue", "update"), ("issue", "move"),
+    ("issue", "claim"), ("issue", "archive"), ("issue", "restore"),
+    ("issue", "relation"), ("comment", "add"), ("comment", "update"),
+    ("comment", "delete"), ("project", "create"),
+}
+
+
+def load_config() -> dict:
+    """读取脚本同目录的可选 config.json（安装态配置：exe 路径 / 数据目录等）。
+
+    优先级：显式命令行参数 > 环境变量 > config.json > 默认值。
+    配置键（见 config.example.json）：widgetExe / widgetDir / dataDir /
+    runtimeDir / threadId。文件缺失或损坏时静默回退默认值。
+    """
+    path = Path(__file__).resolve().parent / "config.json"
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return {}
+
+
+CONFIG = load_config()
 
 
 def project_root() -> Path:
@@ -37,7 +64,7 @@ def project_root() -> Path:
 
 
 def runtime_dir(root: Path) -> Path:
-    configured = os.environ.get("VIBE_TASKDECK_RUNTIME_DIR")
+    configured = os.environ.get("VIBE_TASKDECK_RUNTIME_DIR") or CONFIG.get("runtimeDir")
     if configured:
         return Path(configured).expanduser().resolve()
     return root / ".tmpfiles" / "Vibe-TaskDeck"
@@ -53,7 +80,7 @@ def data_dir(root: Path) -> Path:
     挂件（Rust 直连 SQLite）与 taskctl-local（Node 直连）共用同一数据库；
     启动两方时都应设置 VIBE_TASKDECK_DATA_DIR。
     """
-    configured = os.environ.get("VIBE_TASKDECK_DATA_DIR")
+    configured = os.environ.get("VIBE_TASKDECK_DATA_DIR") or CONFIG.get("dataDir")
     if configured:
         return Path(configured).expanduser().resolve()
     return root / ".data"
@@ -78,7 +105,11 @@ def emit(value, as_json: bool) -> None:
 
 def resolve_widget_dir(args, root: Path) -> Path | None:
     """解析挂件源码目录（用于定位构建产物与可执行文件）。"""
-    configured = getattr(args, "widget_dir", None) or os.environ.get("VIBE_TASKDECK_WIDGET_DIR")
+    configured = (
+        getattr(args, "widget_dir", None)
+        or os.environ.get("VIBE_TASKDECK_WIDGET_DIR")
+        or CONFIG.get("widgetDir")
+    )
     if configured:
         return Path(configured).expanduser().resolve()
     default = root / "widget"
@@ -87,7 +118,11 @@ def resolve_widget_dir(args, root: Path) -> Path | None:
 
 def resolve_widget_exe(args, root: Path) -> Path | None:
     """解析挂件可执行文件（用于 widget 启动）。"""
-    configured = getattr(args, "widget_exe", None) or os.environ.get("VIBE_TASKDECK_WIDGET_EXE")
+    configured = (
+        getattr(args, "widget_exe", None)
+        or os.environ.get("VIBE_TASKDECK_WIDGET_EXE")
+        or CONFIG.get("widgetExe")
+    )
     if configured:
         return Path(configured).expanduser().resolve()
     widget_dir = resolve_widget_dir(args, root)
@@ -207,8 +242,66 @@ def stop(args, root: Path, remove_runtime=False, purge=False, purge_data=False) 
                     if attempt == 4:
                         raise
                     time.sleep(1.0)
+        # taskctl sync 游标（v0.5.0，存于数据目录）随数据一并清理
+        for stale in ("taskctl-sync.json", "taskctl-sync.json.tmp"):
+            stale_file = target_dir / stale
+            if stale_file.is_file():
+                stale_file.unlink()
+                data_removed = True
     emit({"ok": True, "stopped": stopped, "purged": purge, "dataPurged": data_removed, "runtimeDir": str(runtime_dir(root)), "dataDir": str(data_dir(root))}, args.json)
     return 0
+
+
+def effective_thread_id(root: Path) -> str | None:
+    """解析本会话稳定 thread-id：显式 env > config.json > runtimeDir 持久化生成。
+
+    首次调用生成 `mana-<随机>` 存入 runtimeDir/thread-id.json，后续复用——
+    写操作不再需要每次手传 --thread-id（读操作与显式 --thread-id 不受影响）。
+    """
+    for name in ("CODEX_THREAD_ID", "VIBE_TASKDECK_THREAD_ID"):
+        value = os.environ.get(name, "").strip()
+        if value:
+            return value
+    configured = str(CONFIG.get("threadId") or "").strip()
+    if configured:
+        return configured
+    state = runtime_dir(root) / "thread-id.json"
+    try:
+        value = str(json.loads(state.read_text(encoding="utf-8"))["threadId"]).strip()
+        if value:
+            return value
+    except (FileNotFoundError, json.JSONDecodeError, OSError, KeyError):
+        pass
+    value = f"mana-{uuid.uuid4().hex[:12]}"
+    try:
+        state.parent.mkdir(parents=True, exist_ok=True)
+        state.write_text(
+            json.dumps({"threadId": value, "createdAt": time.strftime("%Y-%m-%dT%H:%M:%S%z")}, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        return None  # 落盘失败时退回「不注入」，让 CLI 报缺 --thread-id
+    return value
+
+
+def inject_thread_id(args, root: Path) -> list[str]:
+    """写命令缺 --thread-id 时自动注入（稳定 thread-id），返回补齐后的参数列表。
+
+    只注入 THREAD_ID_COMMANDS 中的写命令；参数已含 --thread-id 或 `--`
+    分隔符（其后全是位置参数）时不注入。
+    """
+    taskctl_args = list(args.taskctl_args)
+    if not taskctl_args or "--" in taskctl_args:
+        return taskctl_args
+    if any(token == "--thread-id" or token.startswith("--thread-id=") for token in taskctl_args):
+        return taskctl_args
+    command = (taskctl_args[0] if len(taskctl_args) > 0 else "", taskctl_args[1] if len(taskctl_args) > 1 else "")
+    if command not in THREAD_ID_COMMANDS:
+        return taskctl_args
+    thread_id = effective_thread_id(root)
+    if not thread_id:
+        return taskctl_args
+    return [*taskctl_args, "--thread-id", thread_id]
 
 
 def resolve_taskctl_exe(args, root: Path) -> Path | None:
@@ -232,7 +325,10 @@ def taskctl(args, root: Path) -> int:
     v0.4.0 起优先走挂件 exe 的 CLI 双模式（Rust 实现与挂件同库同语义，
     零 Node 依赖）；exe 未构建时回退 Node 脚本（cli/taskctl-local.mjs，
     需 Node 22.5+）。两者输出契约一致（schemaVersion:2 JSON + 退出码）。
+    v0.5.0 起写命令缺 --thread-id 时自动注入稳定 thread-id（env >
+    config.json > runtimeDir/thread-id.json 首次生成）。
     """
+    taskctl_args = inject_thread_id(args, root)
     exe = resolve_taskctl_exe(args, root)
     if exe is None:
         # 回退链：Node 脚本（契约基准实现）
@@ -253,7 +349,7 @@ def taskctl(args, root: Path) -> int:
         env = os.environ.copy()
         env.setdefault("VIBE_TASKDECK_DATA_DIR", str(data_dir(root)))
         result = subprocess.run(
-            ["node", str(script), *args.taskctl_args], cwd=str(root), env=env, text=True,
+            ["node", str(script), *taskctl_args], cwd=str(root), env=env, text=True,
             encoding="utf-8", errors="replace",
         )
         return result.returncode
@@ -262,7 +358,7 @@ def taskctl(args, root: Path) -> int:
     # 显式管道转发：GUI 子系统（windows_subsystem="windows"）的 exe 在
     # 句柄继承模式下 stdout 会静默丢失（实测）；capture 后转发彻底绕开。
     result = subprocess.run(
-        [str(exe), "taskctl", *args.taskctl_args], cwd=str(root), env=env,
+        [str(exe), "taskctl", *taskctl_args], cwd=str(root), env=env,
         capture_output=True, timeout=60,
     )
     sys.stdout.buffer.write(result.stdout)

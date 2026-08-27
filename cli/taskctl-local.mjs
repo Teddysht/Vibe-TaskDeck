@@ -32,15 +32,16 @@ import {
 
 export const SCHEMA_VERSION = 2;
 
-const BOOLEAN_OPTIONS = new Set(["json", "clear-binding-thread"]);
+const BOOLEAN_OPTIONS = new Set(["json", "clear-binding-thread", "force"]);
 const GLOBAL_OPTIONS = new Set(["runtime-file"]);
 
 // 与 upstream COMMAND_OPTIONS 中本地模式支持的子集保持一致（选项集合逐字相同）
 const COMMAND_OPTIONS = new Map([
   ["project list", new Set(["json"])],
   ["project create", new Set(["id", "name", "workspace-path", "json"])],
-  ["issue list", new Set(["project", "status", "archived", "thread-id", "updated-since", "json"])],
-  ["issue get", new Set(["json"])],
+  ["issue list", new Set(["project", "status", "archived", "thread-id", "updated-since", "fields", "json"])],
+  ["issue get", new Set(["fields", "json"])],
+  ["issue claim", new Set(["thread-id", "if-version", "force", "json"])],
   [
     "issue create",
     new Set([
@@ -94,6 +95,7 @@ const COMMAND_OPTIONS = new Map([
     "binding-workspace-path",
     "clear-binding-thread",
     "if-version",
+    "force",
     "json",
   ])],
   ["issue archive", new Set(["thread-id", "if-version", "json"])],
@@ -118,6 +120,10 @@ const UNSUPPORTED_COMMANDS = new Set([
   "cloud status",
   "cloud logout",
 ]);
+
+// v0.5.0 AI 工作流聚合命令：仅挂件 exe 双模式实现（游标文件/时间窗聚合），
+// Node 回退路径明确指引而非笼统 usage 错误
+const EXE_ONLY_COMMANDS = new Set(["sync", "report"]);
 
 /* ==== agent 身份解析（多 AI 区分）====
  * 默认与 HTTP 模式 x-taskboard-client: taskctl 头的 actor 一致（app.mjs CODEX_AGENT_ACTOR）；
@@ -242,10 +248,16 @@ function execute(parsed, overrides) {
       { code: "UNSUPPORTED_LOCAL", exitCode: 2 },
     );
   }
+  if (EXE_ONLY_COMMANDS.has(command)) {
+    throw new TaskctlError(
+      `'${command}' requires the widget exe CLI dual mode (taskdeck-widget.exe ${command}, v0.5.0+). Build the exe (widget: npm run build, then src-tauri: cargo build) or call it through skill/taskboard.py.`,
+      { code: "EXE_ONLY", exitCode: 2 },
+    );
+  }
   const allowedOptions = COMMAND_OPTIONS.get(command);
   if (!allowedOptions) {
     throw usageError(
-      "Expected one of: project list/create, issue list/get/create/update/move/archive/restore/relation, comment list/add/update/delete, attachment download/upload, activity list, context current",
+      "Expected one of: project list/create, issue list/get/create/update/move/claim/archive/restore/relation, comment list/add/update/delete, attachment download/upload, activity list, context current",
     );
   }
   validateOptions(parsed.options, allowedOptions);
@@ -265,7 +277,7 @@ function execute(parsed, overrides) {
         return issueList(db, parsed.options);
       case "issue get":
         expectOperandCount(parsed, 1);
-        return issueGet(db, parsed.operands[0]);
+        return issueGet(db, parsed.operands[0], parsed.options);
       case "issue create":
         expectOperandCount(parsed, 0);
         return issueCreate(db, parsed.options, overrides);
@@ -275,6 +287,9 @@ function execute(parsed, overrides) {
       case "issue move":
         expectOperandCount(parsed, 1);
         return issueMove(db, parsed.operands[0], parsed.options, overrides);
+      case "issue claim":
+        expectOperandCount(parsed, 1);
+        return issueClaim(db, parsed.operands[0], parsed.options, overrides);
       case "issue archive":
         expectOperandCount(parsed, 1);
         return issueArchive(db, parsed.operands[0], parsed.options, overrides, "archive");
@@ -375,6 +390,39 @@ function projectCreate(db, options, overrides) {
   return { project: db.createProject({ id, name, workspacePath }) };
 }
 
+/** task 宽形状字段白名单（--fields 投影合法值；与 exe taskctl.rs 同集合） */
+const TASK_FIELD_WHITELIST = new Set([
+  "id", "identifier", "projectId", "title", "description", "status", "priority",
+  "labels", "sortOrder", "threadId", "creatorType", "creatorId", "creatorName",
+  "creatorAvatarUrl", "assigneeType", "assigneeId", "assigneeName", "assigneeAvatarUrl",
+  "workflowId", "developmentContext", "recurrence", "startDate", "dueDate",
+  "archivedAt", "version", "createdAt", "updatedAt",
+]);
+
+/** --fields 紧凑投影：逗号分隔字段列表 → 白名单校验 + 按序投影（AI 轮询省 token） */
+function parseFields(raw) {
+  if (raw === undefined) return undefined;
+  const fields = [];
+  for (const field of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+    if (!TASK_FIELD_WHITELIST.has(field)) {
+      throw usageError(`Unknown field '${field}' in --fields`);
+    }
+    if (!fields.includes(field)) fields.push(field);
+  }
+  if (fields.length === 0) {
+    throw usageError("--fields cannot be empty");
+  }
+  return fields;
+}
+
+function projectTask(task, fields) {
+  const projected = {};
+  for (const field of fields) {
+    if (field in task) projected[field] = task[field];
+  }
+  return projected;
+}
+
 function issueList(db, options) {
   if (options.status !== undefined) {
     assertStatus(options.status);
@@ -387,15 +435,15 @@ function issueList(db, options) {
     : assertIsoTimestamp(options["updated-since"], "--updated-since");
   // 对齐路由默认值：未传 --archived 时只看未归档任务（app.mjs parseTaskFilters）
   const archived = options.archived ?? "false";
-  return {
-    tasks: db.listTasks({
-      projectId: options.project,
-      status: options.status,
-      archived: archived === "all" ? undefined : archived,
-      threadId: options["thread-id"],
-      updatedSince,
-    }),
-  };
+  const tasks = db.listTasks({
+    projectId: options.project,
+    status: options.status,
+    archived: archived === "all" ? undefined : archived,
+    threadId: options["thread-id"],
+    updatedSince,
+  });
+  const fields = parseFields(options.fields);
+  return { tasks: fields ? tasks.map((t) => projectTask(t, fields)) : tasks };
 }
 
 /** 活动流读取（AI 回执闭环）：按 --thread-id 聚合会话名下任务的人机双方变更 */
@@ -412,12 +460,13 @@ function activityList(db, options) {
   };
 }
 
-function issueGet(db, taskId) {
+function issueGet(db, taskId, options) {
   const task = db.getTask(requireIssueId(taskId));
   if (!task) {
     throw apiError(404, "TASK_NOT_FOUND", `Task '${taskId}' does not exist`);
   }
-  return { task };
+  const fields = parseFields(options.fields);
+  return { task: fields ? projectTask(task, fields) : task };
 }
 
 function issueCreate(db, options, overrides) {
@@ -496,13 +545,65 @@ function issueUpdate(db, taskId, options, overrides) {
   return { task: db.updateTask(id, version, changes, threadId, undefined, resolveActor(overrides)) };
 }
 
+/** v0.5.0 CLI 协议护栏（与 exe taskctl.rs 同语义；挂件 GUI 不受影响）：
+ *  1. backlog 未经授权不得直接流转到 todo 之外；
+ *  2. in_progress 且绑定其他会话的任务不被当前会话接管。
+ *  两条均可 --force 逃生（人肉直调或用户明确授权）。 */
+function assertMoveGuards(db, id, status, threadId, options) {
+  if (options.force !== undefined) return;
+  const current = db.getTask(id);
+  if (!current) {
+    throw apiError(404, "TASK_NOT_FOUND", `Task '${id}' does not exist`);
+  }
+  if (current.status === "backlog" && status !== "todo") {
+    throw apiError(400, "TRANSITION_GUARD",
+      `Task is in backlog; moving it to '${status}' requires explicit user authorization. Move it to todo first, or pass --force if the user approved.`);
+  }
+  if (current.status === "in_progress" && status !== "in_progress"
+      && current.threadId && current.threadId !== threadId) {
+    throw new TaskctlError(
+      `Task is in_progress and bound to another session (${current.threadId}); refusing to take over another session's task. Pass --force to override.`,
+      { code: "CLAIMED_BY_OTHER", exitCode: 5, details: JSON.stringify({ threadId: current.threadId }) },
+    );
+  }
+}
+
 function issueMove(db, taskId, options, overrides) {
   const status = requiredOption(options, "status");
   assertStatus(status);
   const threadId = resolveThreadId(options, overrides);
   const id = requireIssueId(taskId);
+  assertMoveGuards(db, id, status, threadId, options);
   const version = resolveVersion(db, id, options["if-version"]);
   return { task: db.moveTask(id, version, status, undefined, threadId, undefined, resolveActor(overrides)) };
+}
+
+/** issue claim：认领三步合一（读版本 → CAS todo→in_progress → 绑定 thread-id）。
+ *  幂等（已绑当前会话 claimed=false 不 bump version）；他人持有 CLAIM_CONFLICT
+ *  （exit 5）；backlog 默认拒绝、--force 表示用户已授权；其余状态 CLAIM_REJECTED。 */
+function issueClaim(db, taskId, options, overrides) {
+  const force = options.force !== undefined;
+  const threadId = resolveThreadId(options, overrides);
+  const id = requireIssueId(taskId);
+  const current = db.getTask(id);
+  if (!current) {
+    throw apiError(404, "TASK_NOT_FOUND", `Task '${id}' does not exist`);
+  }
+  if (current.status === "in_progress") {
+    if (current.threadId === threadId) {
+      return { task: current, claimed: false, reason: "already-claimed-by-this-thread" };
+    }
+    throw new TaskctlError(
+      `Task is in_progress and bound to another session (${current.threadId}).`,
+      { code: "CLAIM_CONFLICT", exitCode: 5, details: JSON.stringify({ threadId: current.threadId }) },
+    );
+  }
+  if (current.status !== "todo" && !(current.status === "backlog" && force)) {
+    throw apiError(400, "CLAIM_REJECTED",
+      `Cannot claim a task in '${current.status}' status; expected 'todo'. Use issue move for other transitions.`);
+  }
+  const version = resolveVersion(db, id, options["if-version"]);
+  return { task: db.moveTask(id, version, "in_progress", undefined, threadId, undefined, resolveActor(overrides)), claimed: true };
 }
 
 function issueArchive(db, taskId, options, overrides, action) {

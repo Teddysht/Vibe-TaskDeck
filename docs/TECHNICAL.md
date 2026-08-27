@@ -160,6 +160,9 @@ cd widget; npm run build              # 前置：产物新鲜
 cd tests; node run-all.mjs            # mock 层 12 套件（无头 Chrome + mock __TAURI_INTERNALS__）
 # 真实层（连运行中的挂件）：挂件以 WEBVIEW2_CDP_PORT=8490 启动后
 $env:WIDGET_CDP_PORT=8490; node run-all.mjs
+node tests/cli-smoke.mjs              # Node 回退 CLI 契约（50 断言，含 v0.5.0 护栏/claim/fields/EXE_ONLY）
+node tests/cli-rs-smoke.mjs           # exe CLI 契约（77 断言，含 v0.5.0 护栏/claim/fields/sync/report）
+node tests/cli-rs-ca-smoke.mjs        # exe 评论+附件契约（41 断言，SQL 直插种子）
 cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
 ```
 
@@ -180,16 +183,22 @@ cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
 | 变量 | 说明 | 默认 |
 | --- | --- | --- |
 | `VIBE_TASKDECK_DATA_DIR` | 任务数据库目录 | `<repo>/.data`（挂件独立运行时 `%APPDATA%\Vibe-TaskDeck`） |
-| `VIBE_TASKDECK_RUNTIME_DIR` | 挂件 PID/状态运行目录 | `<repo>/.tmpfiles/Vibe-TaskDeck` |
+| `VIBE_TASKDECK_RUNTIME_DIR` | 挂件 PID/状态运行目录（含 thread-id.json） | `<repo>/.tmpfiles/Vibe-TaskDeck` |
 | `VIBE_TASKDECK_WIDGET_DIR` / `VIBE_TASKDECK_WIDGET_EXE` | 挂件源码目录 / 可执行文件路径 | `widget/` 自动探测 |
+| `CODEX_THREAD_ID` / `VIBE_TASKDECK_THREAD_ID` | 写操作会话归属（taskboard.py 自动注入优先级最高层） | 不设（回退 config.json > runtimeDir 持久化生成） |
+| `VIBE_TASKDECK_ACTOR_ID` / `VIBE_TASKDECK_ACTOR_NAME` | 多 AI 身份区分（creator/assignee/activity actor） | `codex-agent` / `Codex Agent` |
 | `WEBVIEW2_CDP_PORT` | WebView2 CDP 调试端口（端到端测试用） | 不设 |
 
-## exe 双模式 CLI（v0.4.0）
+另：`skill/config.json`（安装态可选配置，样例 `config.example.json`）——`widgetExe` / `widgetDir` / `dataDir` / `runtimeDir` / `threadId`，优先级 命令行参数 > 环境变量 > config.json > 默认值。
+
+## exe 双模式 CLI（v0.4.0；v0.5.0 命令层扩展）
 
 挂件 exe 兼作 taskctl：`argv[1] == "taskctl"` 时不初始化 WebView，走 `src/taskctl.rs` 分支直连 db.rs 后退出。要点：
 
 - **stdio**：release 构建 `windows_subsystem="windows"` 无控制台，进程常无有效 std 句柄——`cli_stdio()` 按 GetStdHandle（父进程管道）→ AttachConsole+CONOUT$（终端直调）解析显式写入器；句柄继承模式（如 Python subprocess 无 capture）实测会静默丢输出，调用方应显式管道捕获（taskboard.py 即如此）。
-- **契约**：输出/校验/退出码逐字对齐 `cli/taskctl-local.mjs`（Node 版保持为契约基准与回退路径，cli-smoke 39 断言 + cli-rs 两套件 99 断言钉住）。
+- **契约**：输出/校验/退出码逐字对齐 `cli/taskctl-local.mjs`（Node 版保持为契约基准与回退路径）。v0.5.0 新命令契约：`issue move`/`issue claim`/`--fields` **双端实现**（exe 与 Node 语义一致）；`sync`/`report` **exe 专属**（Node 回退返回 `EXE_ONLY` exit 2 并指引构建 exe）。断言数见「测试体系」。
+- **v0.5.0 协议护栏**（仅 CLI 层，挂件 GUI 拖拽不受影响）：`issue move` 拒绝 backlog → todo 之外的流转（`TRANSITION_GUARD` exit 4）与接管其他会话的 in_progress 任务（`CLAIMED_BY_OTHER` exit 5，details 带持有者）；`--force` 逃生口供人肉直调/用户明确授权。`issue claim` 原子认领：幂等（同会话重复 claim 不 bump version）、他人持有 `CLAIM_CONFLICT` exit 5、backlog 拒绝 `CLAIM_REJECTED`（`--force` 表示用户已授权）。
+- **sync 游标**：`<dataDir>/taskctl-sync.json`（按 thread-id 分桶，temp+rename 原子写）；`clean --purge-data` 连带清理。逾期判定按 UTC 日期口径（挂件前端为本地时区口径）。
 - **GUI 零回归**：create_task/move_task/update_task 等扩展 actor 参数，挂件调用点显式传 LOCAL_USER_ACTOR，行为不变；GUI 窄形状输出走新函数（task_full_json 宽形状仅 CLI 用）。
 
 ## 已知技术债

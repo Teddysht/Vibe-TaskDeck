@@ -70,10 +70,10 @@ cd TaskDeck
 ### 第 2 步：建第一个任务
 
 ```powershell
-python skill/taskboard.py taskctl issue create --project local --title "我的第一个任务" --thread-id my-session
+python skill/taskboard.py taskctl issue create --project local --title "我的第一个任务"
 ```
 
-看到一段 JSON 输出、里面有任务编号（`LOCAL-1` 这样的格式）就成功了。
+看到一段 JSON 输出、里面有任务编号（`LOCAL-1` 这样的格式）就成功了。v0.5.0 起写命令的 `--thread-id` 自动注入（环境变量 > `config.json` > 首次生成并持久化），也可以显式传。
 
 > 📦 **数据层自研，克隆即可用**：`taskctl` 的数据层是仓库内自研实现（`cli/database.mjs`，基于 Node 24 内置的 node:sqlite），与桌面挂件共用同一个 SQLite 文件——不需要安装数据库软件，也不依赖任何外部代码快照或后台服务。
 
@@ -113,7 +113,7 @@ python skill/taskboard.py widget
 
 > 「帮我把登录 Bug 建成紧急任务，然后认领它开始修」
 
-AI 会通过 `taskctl` 命令建任务、认领、推进、评审——每一步都实时反映在你的桌面挂件上。人和 AI 同时操作也安全：任务带版本号，谁改旧了谁的提交会被拦下来重试，不会互相覆盖。
+AI 会通过 `taskctl` 命令建任务、认领、推进、评审——每一步都实时反映在你的桌面挂件上。人和 AI 同时操作也安全：任务带版本号，谁改旧了谁的提交会被拦下来重试，不会互相覆盖。v0.5.0 起协议护栏内建到 CLI：backlog 未经授权不得开工、不接管其他会话认领的任务；AI 冷启动一条 `sync` 恢复上下文（游标自动持久化），认领一条 `issue claim` 原子完成。
 
 完整的 AI 工作流协议（认领 → 推进 → 评审 → 完成）见 [`skill/SKILL.md`](skill/SKILL.md)。
 

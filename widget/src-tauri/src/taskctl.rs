@@ -20,25 +20,27 @@ use rusqlite::Connection;
 use serde_json::{json, Value};
 
 const SCHEMA_VERSION: i64 = 2;
-const USAGE: &str = "Expected one of: project list/create, issue list/get/create/update/move/archive/restore/relation, comment list/add/update/delete, attachment download/upload, activity list, context current";
+const USAGE: &str = "Expected one of: project list/create, issue list/get/create/update/move/claim/archive/restore/relation, comment list/add/update/delete, attachment download/upload, activity list, context current, sync, report";
 
 /// 本地模式不支持的命令（纯客户端无 server，语义不适用）——
 /// 给出明确指引而非笼统 usage 错误（对齐 taskctl-local 的 UNSUPPORTED_COMMANDS）
 const UNSUPPORTED_COMMANDS: [&str; 5] = ["project map", "cloud login", "cloud status", "cloud logout", "issue delete"];
 
-/// 布尔选项（不接受值；对齐 taskctl-local BOOLEAN_OPTIONS）
-const BOOLEAN_OPTIONS: [&str; 2] = ["json", "clear-binding-thread"];
+/// 布尔选项（不接受值；对齐 taskctl-local BOOLEAN_OPTIONS；force/reset 为
+/// v0.5.0 CLI 护栏与 sync 游标扩展）
+const BOOLEAN_OPTIONS: [&str; 4] = ["json", "clear-binding-thread", "force", "reset"];
 
 /// 各命令允许的选项集合（逐字对齐上游 COMMAND_OPTIONS 本地子集）
 fn allowed_options(command: &str) -> Option<&'static [&'static str]> {
     Some(match command {
         "project list" => &["json"],
         "project create" => &["id", "name", "workspace-path", "binding-thread", "binding-codex-project-id", "binding-codex-project-kind", "binding-codex-host-id", "binding-workspace-path", "thread-id", "json"],
-        "issue list" => &["project", "status", "priority", "assignee", "creator", "label", "thread-id", "archived", "search", "json"],
-        "issue get" => &["json"],
+        "issue list" => &["project", "status", "priority", "assignee", "creator", "label", "thread-id", "archived", "search", "fields", "json"],
+        "issue get" => &["fields", "json"],
         "issue create" => &["project", "title", "description", "status", "priority", "labels", "assignee", "thread-id", "start-date", "due-date", "json"],
         "issue update" => &["title", "description", "status", "priority", "labels", "assignee", "start-date", "due-date", "thread-id", "if-version", "json"],
-        "issue move" => &["status", "sort-order", "thread-id", "if-version", "json"],
+        "issue move" => &["status", "sort-order", "thread-id", "if-version", "force", "json"],
+        "issue claim" => &["thread-id", "if-version", "force", "json"],
         "issue archive" => &["thread-id", "if-version", "json"],
         "issue restore" => &["thread-id", "if-version", "json"],
         "issue relation" => &["type", "issue", "thread-id", "if-version", "json"],
@@ -50,6 +52,8 @@ fn allowed_options(command: &str) -> Option<&'static [&'static str]> {
         "attachment upload" => &["file", "task", "comment", "content-type", "json"],
         "activity list" => &["thread-id", "since-id", "json"],
         "context current" => &["cwd", "json"],
+        "sync" => &["thread-id", "archived", "reset", "json"],
+        "report" => &["thread-id", "window", "json"],
         _ => return None,
     })
 }
@@ -202,6 +206,10 @@ impl Parsed {
             .iter()
             .find(|(n, _)| n == name)
             .and_then(|(_, v)| v.as_deref())
+    }
+    /// 布尔旗标存在性检测（--force / --reset 等：opt() 只返回有值选项）
+    fn flag(&self, name: &str) -> bool {
+        self.options.iter().any(|(n, _)| n == name)
     }
     fn opt_required(&self, name: &str) -> Result<String, CliError> {
         self.opt(name)
@@ -408,7 +416,7 @@ fn dispatch(conn: &Connection, command: &str, parsed: &Parsed) -> Result<Value, 
         }
         "issue get" => {
             expect_operands(parsed, 1)?;
-            issue_get(conn, &parsed.operands[0])
+            issue_get(conn, &parsed.operands[0], parsed)
         }
         "issue create" => {
             expect_operands(parsed, 0)?;
@@ -421,6 +429,10 @@ fn dispatch(conn: &Connection, command: &str, parsed: &Parsed) -> Result<Value, 
         "issue move" => {
             expect_operands(parsed, 1)?;
             issue_move(conn, &parsed.operands[0], parsed)
+        }
+        "issue claim" => {
+            expect_operands(parsed, 1)?;
+            issue_claim(conn, &parsed.operands[0], parsed)
         }
         "issue archive" => {
             expect_operands(parsed, 1)?;
@@ -441,6 +453,14 @@ fn dispatch(conn: &Connection, command: &str, parsed: &Parsed) -> Result<Value, 
         "context current" => {
             expect_operands(parsed, 0)?;
             context_current(conn, parsed)
+        }
+        "sync" => {
+            expect_operands(parsed, 0)?;
+            sync(conn, parsed)
+        }
+        "report" => {
+            expect_operands(parsed, 0)?;
+            report(conn, parsed)
         }
         "comment list" => {
             expect_operands(parsed, 1)?;
@@ -659,8 +679,49 @@ fn project_create(conn: &Connection, parsed: &Parsed) -> Result<Value, CliError>
     Ok(json!({ "project": project }))
 }
 
+/// task 宽形状字段白名单（--fields 投影合法值；对齐 CLI 契约 27 字段全集）
+const TASK_FIELD_WHITELIST: [&str; 27] = [
+    "id", "identifier", "projectId", "title", "description", "status", "priority",
+    "labels", "sortOrder", "threadId", "creatorType", "creatorId", "creatorName",
+    "creatorAvatarUrl", "assigneeType", "assigneeId", "assigneeName", "assigneeAvatarUrl",
+    "workflowId", "developmentContext", "recurrence", "startDate", "dueDate",
+    "archivedAt", "version", "createdAt", "updatedAt",
+];
+
+/// --fields 紧凑投影：逗号分隔字段列表 → 白名单校验 + 按序投影。
+/// AI 高频轮询场景省 token（issue list 多任务全量 27 字段冗长）。
+fn parse_fields(raw: Option<&str>) -> Result<Option<Vec<String>>, CliError> {
+    let Some(raw) = raw else { return Ok(None) };
+    let mut fields: Vec<String> = Vec::new();
+    for field in raw.split(',').map(str::trim).filter(|s| !s.is_empty()) {
+        if !TASK_FIELD_WHITELIST.contains(&field) {
+            return Err(CliError::usage(format!("Unknown field '{field}' in --fields")));
+        }
+        if !fields.iter().any(|f| f == field) {
+            fields.push(field.to_string());
+        }
+    }
+    if fields.is_empty() {
+        return Err(CliError::usage("--fields cannot be empty"));
+    }
+    Ok(Some(fields))
+}
+
+/// 按字段列表投影 task 对象（保留字段出现顺序；缺省字段不输出）
+fn project_task(task: &Value, fields: &[String]) -> Value {
+    let mut projected = serde_json::Map::new();
+    if let Some(obj) = task.as_object() {
+        for field in fields {
+            if let Some(value) = obj.get(field) {
+                projected.insert(field.clone(), value.clone());
+            }
+        }
+    }
+    Value::Object(projected)
+}
+
 /// issue list（过滤语义对齐 taskctl-local issueList；扩展 M2 骨架声明的
-/// priority/assignee/creator/label/search 过滤位）
+/// priority/assignee/creator/label/search 过滤位；--fields 为 v0.5.0 紧凑投影）
 fn issue_list(conn: &Connection, parsed: &Parsed) -> Result<Value, CliError> {
     if let Some(status) = parsed.opt("status") {
         assert_status(status)?;
@@ -687,13 +748,23 @@ fn issue_list(conn: &Connection, parsed: &Parsed) -> Result<Value, CliError> {
         archived,
         search: parsed.opt("search"),
     };
-    Ok(json!({ "tasks": db::list_tasks_full(conn, &filter) }))
+    let tasks = db::list_tasks_full(conn, &filter);
+    match parse_fields(parsed.opt("fields"))? {
+        Some(fields) => Ok(json!({
+            "tasks": tasks.iter().map(|t| project_task(t, &fields)).collect::<Vec<_>>()
+        })),
+        None => Ok(json!({ "tasks": tasks })),
+    }
 }
 
-/// issue get：{task: 宽形状 + comments + activities}
-fn issue_get(conn: &Connection, id: &str) -> Result<Value, CliError> {
+/// issue get：{task: 宽形状 + comments + activities}；--fields 为 v0.5.0 紧凑投影
+/// （投影后 task 仅含所选字段，不含 comments/activities——读评论用 comment list）
+fn issue_get(conn: &Connection, id: &str, parsed: &Parsed) -> Result<Value, CliError> {
     let task = db::get_task_full(conn, id).ok_or_else(|| task_not_found(id))?;
-    Ok(json!({ "task": task }))
+    match parse_fields(parsed.opt("fields"))? {
+        Some(fields) => Ok(json!({ "task": project_task(&task, &fields) })),
+        None => Ok(json!({ "task": task })),
+    }
 }
 
 /// issue create（对齐 taskctl-local issueCreate；--project 缺省 local）
@@ -783,7 +854,11 @@ fn issue_update(conn: &Connection, id: &str, parsed: &Parsed) -> Result<Value, C
     Ok(json!({ "task": task }))
 }
 
-/// issue move（对齐 taskctl-local issueMove；--sort-order 为 M2 骨架选项扩展）
+/// issue move（对齐 taskctl-local issueMove；--sort-order 为 M2 骨架选项扩展）。
+/// v0.5.0 起 CLI 层加协议护栏（挂件 GUI 拖拽不受影响）：
+///   1. backlog 任务未经授权不得直接流转到 todo 之外的状态（SKILL.md 工作流约束下沉）；
+///   2. in_progress 且绑定其他会话的任务不得被当前会话流转（不接管他人任务）。
+/// 两条护栏均可 --force 逃生（人肉直调或用户明确授权场景）。
 fn issue_move(conn: &Connection, id: &str, parsed: &Parsed) -> Result<Value, CliError> {
     let status = parsed.opt_required("status")?;
     assert_status(&status)?;
@@ -794,12 +869,87 @@ fn issue_move(conn: &Connection, id: &str, parsed: &Parsed) -> Result<Value, Cli
         })?),
     };
     let (real_id, _) = db::task_version(conn, id).ok_or_else(|| task_not_found(id))?;
-    let version = resolve_version(conn, id, parsed.if_version()?)?;
     let thread_id = parsed.thread_id()?;
+    if !parsed.flag("force") {
+        let current = db::get_task_wide(conn, &real_id).ok_or_else(|| task_not_found(id))?;
+        let current_status = current["status"].as_str().unwrap_or("");
+        let current_thread = current["threadId"].as_str().unwrap_or("");
+        if current_status == "backlog" && status != "todo" {
+            return Err(CliError::api_code(
+                "TRANSITION_GUARD",
+                format!(
+                    "Task is in backlog; moving it to '{status}' requires explicit user authorization. \
+                     Move it to todo first, or pass --force if the user approved."
+                ),
+            ));
+        }
+        if current_status == "in_progress"
+            && status != "in_progress"
+            && !current_thread.is_empty()
+            && current_thread != thread_id
+        {
+            return Err(CliError {
+                code: "CLAIMED_BY_OTHER",
+                message: format!(
+                    "Task is in_progress and bound to another session ({current_thread}); \
+                     refusing to take over another session's task. Pass --force to override."
+                ),
+                exit_code: 5,
+                details: Some(format!("{{\"threadId\":\"{current_thread}\"}}")),
+            });
+        }
+    }
+    let version = resolve_version(conn, id, parsed.if_version()?)?;
     let actor = agent_actor();
     db::move_task(conn, &real_id, version, &status, sort_order, Some(&thread_id), &actor)?;
     let task = db::get_task_wide(conn, &real_id).unwrap_or(Value::Null);
     Ok(json!({ "task": task }))
+}
+
+/// issue claim：认领三步合一（读版本 → CAS 流转 todo→in_progress → 绑定 thread-id）。
+/// - todo：CAS 认领（--if-version 可选，缺省自动取当前版本）；
+/// - in_progress 且已绑定当前会话：幂等成功（claimed=false，不 bump version）；
+/// - in_progress 且绑定其他会话：CLAIM_CONFLICT（exit 5，details 带当前持有者）；
+/// - backlog：默认拒绝（未获授权），--force 表示用户已授权直接认领；
+/// - 其余状态：CLAIM_REJECTED。
+fn issue_claim(conn: &Connection, id: &str, parsed: &Parsed) -> Result<Value, CliError> {
+    let force = parsed.flag("force");
+    let thread_id = parsed.thread_id()?;
+    let (real_id, _) = db::task_version(conn, id).ok_or_else(|| task_not_found(id))?;
+    let current = db::get_task_wide(conn, &real_id).ok_or_else(|| task_not_found(id))?;
+    let current_status = current["status"].as_str().unwrap_or("");
+    let current_thread = current["threadId"].as_str().unwrap_or("");
+    if current_status == "in_progress" {
+        if current_thread == thread_id {
+            return Ok(json!({
+                "task": current,
+                "claimed": false,
+                "reason": "already-claimed-by-this-thread",
+            }));
+        }
+        return Err(CliError {
+            code: "CLAIM_CONFLICT",
+            message: format!(
+                "Task is in_progress and bound to another session ({current_thread})."
+            ),
+            exit_code: 5,
+            details: Some(format!("{{\"threadId\":\"{current_thread}\"}}")),
+        });
+    }
+    if current_status != "todo" && !(current_status == "backlog" && force) {
+        return Err(CliError::api_code(
+            "CLAIM_REJECTED",
+            format!(
+                "Cannot claim a task in '{current_status}' status; expected 'todo'. \
+                 Use issue move for other transitions."
+            ),
+        ));
+    }
+    let version = resolve_version(conn, id, parsed.if_version()?)?;
+    let actor = agent_actor();
+    db::move_task(conn, &real_id, version, "in_progress", None, Some(&thread_id), &actor)?;
+    let task = db::get_task_wide(conn, &real_id).unwrap_or(Value::Null);
+    Ok(json!({ "task": task, "claimed": true }))
 }
 
 /// issue archive / issue restore（对齐 taskctl-local issueArchive）
@@ -913,6 +1063,256 @@ fn workspace_contains(workspace_path: &str, cwd: &std::path::Path) -> bool {
         }
         Err(_) => false,
     }
+}
+
+/* ============================================================
+ * AI 工作流聚合命令（v0.5.0）：sync（冷启动游标）/ report（汇报聚合）
+ * ============================================================ */
+
+/// sync / report 的任务紧凑投影字段（AI 扫一眼足够，开工前再 issue get 读全量）
+fn sync_fields() -> Vec<String> {
+    ["id", "identifier", "title", "status", "priority", "dueDate", "version", "threadId"]
+        .iter()
+        .map(|s| s.to_string())
+        .collect()
+}
+
+/// sync 游标文件：<data_dir>/taskctl-sync.json
+fn sync_state_path() -> Result<std::path::PathBuf, CliError> {
+    let dir = db::cli_data_dir().map_err(|message| CliError {
+        code: "SERVICE_UNAVAILABLE",
+        message,
+        exit_code: 3,
+        details: None,
+    })?;
+    Ok(dir.join("taskctl-sync.json"))
+}
+
+/// 游标结构：{ "threads": { <thread-id>: { "lastSinceId", "lastSyncAt" } } }
+fn load_sync_state(path: &std::path::Path) -> Value {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok())
+        .filter(|value| value.is_object())
+        .unwrap_or_else(|| json!({ "threads": {} }))
+}
+
+/// 原子写（temp + rename）：CLI 即开即关，多会话并发下不产生半写文件
+fn save_sync_state(path: &std::path::Path, state: &Value) -> Result<(), CliError> {
+    let service_unavailable = |message: String| CliError {
+        code: "SERVICE_UNAVAILABLE",
+        message,
+        exit_code: 3,
+        details: None,
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| service_unavailable(format!("创建数据目录失败：{e}")))?;
+    }
+    let tmp = path.with_extension("json.tmp");
+    let text = serde_json::to_string(state).unwrap_or_default();
+    std::fs::write(&tmp, text)
+        .map_err(|e| service_unavailable(format!("写入游标文件失败：{e}")))?;
+    std::fs::rename(&tmp, path)
+        .map_err(|e| service_unavailable(format!("保存游标文件失败：{e}")))?;
+    Ok(())
+}
+
+/// sync：AI 冷启动恢复一条命令化。
+/// 游标持久化在 <data_dir>/taskctl-sync.json（按 thread-id 区分），返回
+/// 「名下任务（紧凑）+ 待处理项（in_review/blocked/逾期）+ 自上次以来的
+/// 活动增量」；首跑或 --reset 无游标 → 活动全量截最近 50 条。
+/// 逾期按 UTC 日期口径判定（dueDate < UTC today；挂件前端为本地时区口径）。
+fn sync(conn: &Connection, parsed: &Parsed) -> Result<Value, CliError> {
+    let thread_id = parsed.thread_id()?;
+    let reset = parsed.flag("reset");
+    let archived = match parsed.opt("archived") {
+        None => Some(false),
+        Some("true") => Some(true),
+        Some("false") => Some(false),
+        Some("all") => None,
+        Some(_) => return Err(CliError::usage("--archived must be true, false, or all")),
+    };
+
+    let state_path = sync_state_path()?;
+    let mut state = load_sync_state(&state_path);
+    let entry = if reset {
+        Value::Null
+    } else {
+        state["threads"][thread_id.as_str()].clone()
+    };
+    let last_since_id = entry["lastSinceId"].as_str().map(str::to_string);
+    let last_sync_at = entry["lastSyncAt"].as_str().map(str::to_string);
+
+    let mut activities = db::list_activity_feed(conn, Some(&thread_id), last_since_id.as_deref());
+    let activities_truncated = activities.len() > 50;
+    if activities_truncated {
+        let skip = activities.len() - 50;
+        activities.drain(0..skip);
+    }
+    let next_since_id = activities
+        .last()
+        .and_then(|activity| activity["id"].as_str())
+        .map(|id| json!(id))
+        .or_else(|| last_since_id.as_deref().map(|id| json!(id)))
+        .unwrap_or(Value::Null);
+
+    let filter = db::TaskListFilter {
+        project_id: None,
+        status: None,
+        priority: None,
+        assignee_id: None,
+        creator_id: None,
+        label: None,
+        thread_id: Some(&thread_id),
+        archived,
+        search: None,
+    };
+    let mine = db::list_tasks_full(conn, &filter);
+    let fields = sync_fields();
+
+    let today_iso = db::now_iso_minus(0);
+    let today = &today_iso[..10];
+    let in_review: Vec<Value> = mine
+        .iter()
+        .filter(|t| t["status"] == "in_review")
+        .map(|t| project_task(t, &fields))
+        .collect();
+    let blocked: Vec<Value> = mine
+        .iter()
+        .filter(|t| t["status"] == "blocked")
+        .map(|t| project_task(t, &fields))
+        .collect();
+    let overdue: Vec<Value> = mine
+        .iter()
+        .filter(|t| {
+            t["dueDate"].as_str().map_or(false, |d| d < today)
+                && t["status"] != "done"
+                && t["status"] != "canceled"
+        })
+        .map(|t| project_task(t, &fields))
+        .collect();
+
+    let synced_at = db::now_iso_minus(0);
+    let mut threads = state
+        .get("threads")
+        .and_then(|t| t.as_object())
+        .cloned()
+        .unwrap_or_default();
+    threads.insert(
+        thread_id.clone(),
+        json!({ "lastSinceId": next_since_id, "lastSyncAt": synced_at }),
+    );
+    state = json!({ "threads": threads });
+    save_sync_state(&state_path, &state)?;
+
+    let mine_compact: Vec<Value> = mine.iter().map(|t| project_task(t, &fields)).collect();
+    Ok(json!({
+        "threadId": thread_id,
+        "mine": mine_compact,
+        "attention": { "inReview": in_review, "blocked": blocked, "overdue": overdue },
+        "activities": activities,
+        "activitiesTruncated": activities_truncated,
+        "nextSinceId": next_since_id,
+        "lastSyncAt": last_sync_at,
+        "syncedAt": synced_at,
+    }))
+}
+
+/// report：AI 汇报聚合——名下任务状态汇总 + 逾期/blocked/in_review +
+/// 时间窗内活动流。--thread-id 缺省报全看板；--window 小时数（默认 24，
+/// 1..=720）；活动按 created_at >= now-window 过滤（ISO 定长可字典序比较）。
+fn report(conn: &Connection, parsed: &Parsed) -> Result<Value, CliError> {
+    let thread_id = parsed.opt("thread-id").map(|t| t.trim().to_string());
+    if thread_id.as_deref().map(|t| t.is_empty()).unwrap_or(false) {
+        return Err(CliError::usage("--thread-id cannot be empty"));
+    }
+    let window_hours: i64 = match parsed.opt("window") {
+        None => 24,
+        Some(raw) => match raw.parse::<i64>() {
+            Ok(v) if (1..=720).contains(&v) => v,
+            _ => return Err(CliError::usage(format!("Invalid --window value: {raw} (expected 1-720 hours)"))),
+        },
+    };
+
+    let filter = db::TaskListFilter {
+        project_id: None,
+        status: None,
+        priority: None,
+        assignee_id: None,
+        creator_id: None,
+        label: None,
+        thread_id: thread_id.as_deref(),
+        archived: Some(false),
+        search: None,
+    };
+    let tasks = db::list_tasks_full(conn, &filter);
+    let fields = sync_fields();
+
+    let mut by_status: Vec<(String, i64)> = db::TASK_STATUSES
+        .iter()
+        .map(|s| (s.to_string(), 0))
+        .collect();
+    for task in &tasks {
+        if let Some(status) = task["status"].as_str() {
+            if let Some(entry) = by_status.iter_mut().find(|(name, _)| name == status) {
+                entry.1 += 1;
+            }
+        }
+    }
+    let by_status: serde_json::Map<String, Value> = by_status
+        .into_iter()
+        .map(|(name, count)| (name, json!(count)))
+        .collect();
+
+    let today_iso = db::now_iso_minus(0);
+    let today = &today_iso[..10];
+    let in_review: Vec<Value> = tasks
+        .iter()
+        .filter(|t| t["status"] == "in_review")
+        .map(|t| project_task(t, &fields))
+        .collect();
+    let blocked: Vec<Value> = tasks
+        .iter()
+        .filter(|t| t["status"] == "blocked")
+        .map(|t| project_task(t, &fields))
+        .collect();
+    let overdue: Vec<Value> = tasks
+        .iter()
+        .filter(|t| {
+            t["dueDate"].as_str().map_or(false, |d| d < today)
+                && t["status"] != "done"
+                && t["status"] != "canceled"
+        })
+        .map(|t| project_task(t, &fields))
+        .collect();
+
+    let threshold = db::now_iso_minus(window_hours * 3600);
+    let mut activities: Vec<Value> = db::list_activity_feed(conn, thread_id.as_deref(), None)
+        .into_iter()
+        .filter(|activity| {
+            activity["createdAt"]
+                .as_str()
+                .map_or(false, |t| t >= threshold.as_str())
+        })
+        .collect();
+    let activities_truncated = activities.len() > 100;
+    if activities_truncated {
+        let skip = activities.len() - 100;
+        activities.drain(0..skip);
+    }
+
+    Ok(json!({
+        "generatedAt": today_iso,
+        "threadId": thread_id,
+        "windowHours": window_hours,
+        "summary": { "total": tasks.len(), "byStatus": by_status },
+        "overdue": overdue,
+        "blocked": blocked,
+        "inReview": in_review,
+        "recentActivities": activities,
+        "activitiesTruncated": activities_truncated,
+    }))
 }
 
 /* ==== comment + attachment 簇（M3-B；契约逐字对齐 cli/taskctl-local.mjs） ==== */

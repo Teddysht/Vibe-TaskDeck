@@ -1,9 +1,8 @@
 {
-  "source": "F:/vibe-taskdeck-src",
-  "host": "127.0.0.1",
-  "port": 47823,
-  "runtimeDir": "F:/vibe-taskdeck-runtime",
-  "healthPath": "/",
-  "startCommand": ["npm", "start"],
-  "taskctlCommand": ["npm", "run", "taskctl", "--"]
+  "_comment": "taskboard.py 可选安装态配置：复制为同目录 config.json 生效。所有键均可省略；优先级：显式命令行参数 > 环境变量（VIBE_TASKDECK_*）> 本文件 > 默认值。开发布局（仓库内）通常无需配置。",
+  "widgetExe": "C:/path/to/taskdeck-widget.exe",
+  "widgetDir": "C:/path/to/taskboard-skill/widget",
+  "dataDir": "C:/path/to/taskboard-data",
+  "runtimeDir": "C:/path/to/taskboard-runtime",
+  "threadId": "my-stable-session-id"
 }

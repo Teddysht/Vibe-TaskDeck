@@ -95,7 +95,7 @@ if (missingLayer) {
     try { return JSON.parse(lines[lines.length - 1] ?? ''); } catch { return null; }
   };
   const mkTask = (title) => asJson(run(['issue', 'create', '--project', 'local',
-    '--title', title, '--thread-id', 't-rel']))?.task;
+    '--title', title, '--thread-id', 't-rel', '--status', 'todo']))?.task;
   const taskA = mkTask('relation-A');
   const taskB = mkTask('relation-B');
   const taskC = mkTask('relation-C');
@@ -160,6 +160,56 @@ if (missingLayer) {
       '--type', 'related', '--issue', taskB.id, '--thread-id', 't-rel']);
     check('不带 --if-version 自动取当前版本（手动 bump 后 add 仍成功）',
       fresh.status === 0, (fresh.stderr || '').slice(0, 200));
+  }
+
+  // ---- 3b+. v0.5.0 AI 工作流：move 护栏 + claim + fields + exe 专属命令 ----
+  {
+    const mk5 = (title, extra = []) => asJson(run(['issue', 'create', '--project', 'local',
+      '--title', title, '--thread-id', 't-cli5', ...extra]))?.task;
+    const backlogTask = mk5('v5-护栏-backlog');
+    const guardMove = run(['issue', 'move', backlogTask?.id, '--status', 'in_progress', '--thread-id', 't-cli5']);
+    check('move 护栏：backlog→in_progress 拒绝（TRANSITION_GUARD exit 4）',
+      guardMove.status === 4 && errJson(guardMove)?.error?.code === 'TRANSITION_GUARD');
+    const guardForce = run(['issue', 'move', backlogTask?.id, '--status', 'in_progress',
+      '--thread-id', 't-cli5', '--force']);
+    check('move 护栏：--force 逃生（exit 0）', guardForce.status === 0);
+    const guardOther = run(['issue', 'move', backlogTask?.id, '--status', 'in_review', '--thread-id', 't-other5']);
+    check('move 护栏：他人 in_progress 任务 → CLAIMED_BY_OTHER（exit 5）',
+      guardOther.status === 5 && errJson(guardOther)?.error?.code === 'CLAIMED_BY_OTHER');
+
+    const todoTask = mk5('v5-claim-todo', ['--status', 'todo']);
+    const claim1 = run(['issue', 'claim', todoTask?.id, '--thread-id', 't-cli5']);
+    check('claim：todo→in_progress 认领成功（claimed=true）',
+      claim1.status === 0 && asJson(claim1)?.claimed === true
+        && asJson(claim1)?.task?.status === 'in_progress');
+    const claim2 = run(['issue', 'claim', todoTask?.id, '--thread-id', 't-cli5']);
+    check('claim：幂等（claimed=false）',
+      claim2.status === 0 && asJson(claim2)?.claimed === false);
+    const claimOther = run(['issue', 'claim', todoTask?.id, '--thread-id', 't-other5']);
+    check('claim：他人持有 → CLAIM_CONFLICT（exit 5）',
+      claimOther.status === 5 && errJson(claimOther)?.error?.code === 'CLAIM_CONFLICT');
+    const claimBacklog = mk5('v5-claim-backlog');
+    const claimBk = run(['issue', 'claim', claimBacklog?.id, '--thread-id', 't-cli5']);
+    check('claim：backlog 拒绝（CLAIM_REJECTED exit 4）',
+      claimBk.status === 4 && errJson(claimBk)?.error?.code === 'CLAIM_REJECTED');
+
+    const fieldsList = run(['issue', 'list', '--fields', 'id,title,status', '--json']);
+    const fieldsTasks = asJson(fieldsList)?.tasks;
+    check('issue list --fields 紧凑投影（键集合精确）',
+      fieldsList.status === 0 && Array.isArray(fieldsTasks) && fieldsTasks.length > 0
+        && fieldsTasks.every((t) => JSON.stringify(Object.keys(t).sort())
+          === JSON.stringify(['id', 'status', 'title'])));
+    const fieldsGet = run(['issue', 'get', todoTask?.id, '--fields', 'id,status,version']);
+    check('issue get --fields 投影',
+      fieldsGet.status === 0 && JSON.stringify(Object.keys(asJson(fieldsGet)?.task || {}).sort())
+        === JSON.stringify(['id', 'status', 'version']));
+
+    const exeOnly = run(['sync', '--thread-id', 't-cli5']);
+    check('sync → EXE_ONLY（exit 2，指引构建 exe）',
+      exeOnly.status === 2 && errJson(exeOnly)?.error?.code === 'EXE_ONLY');
+    const exeOnlyReport = run(['report', '--thread-id', 't-cli5']);
+    check('report → EXE_ONLY（exit 2）',
+      exeOnlyReport.status === 2 && errJson(exeOnlyReport)?.error?.code === 'EXE_ONLY');
   }
   // ---- 3c. attachment upload/download 契约（磁盘 UUID 文件 + 元数据入库，10MB 上限对齐挂件）----
   // stderr 末行才是错误 JSON（node:sqlite 的 ExperimentalWarning 也写 stderr，会混在前几行）；
