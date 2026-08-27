@@ -317,7 +317,11 @@ fn expect_operands(parsed: &Parsed, count: usize) -> Result<(), CliError> {
 
 /// CLI 入口（main.rs 在 argv[1] == "taskctl" 时调用）。
 /// 返回进程退出码；stdout/stderr 已在 main 里 AttachConsole 重绑。
-pub fn run_cli(argv: &[String]) -> i32 {
+/// CLI 主流程。out/err 为显式输出写入器（windows_subsystem="windows" 的
+/// release 下 std 缓存句柄不可靠——main 里经 GetStdHandle/CONOUT$ 解析后
+/// 传入）；None 时回退 println!/eprintln!（debug 构建与非 Windows 用）。
+pub fn run_cli(argv: &[String], out: Option<&mut std::fs::File>, err: Option<&mut std::fs::File>) -> i32 {
+    use std::io::Write;
     // argv 传入时已剥掉 "taskctl" 本身；空参打 usage
     let result = if argv.is_empty() {
         Err(CliError::usage(USAGE))
@@ -330,7 +334,14 @@ pub fn run_cli(argv: &[String]) -> i32 {
             if let Value::Object(map) = &mut envelope {
                 map.insert("schemaVersion".into(), json!(SCHEMA_VERSION));
             }
-            println!("{}", serde_json::to_string(&envelope).unwrap_or_default());
+            let text = serde_json::to_string(&envelope).unwrap_or_default();
+            match out {
+                Some(f) => {
+                    let _ = writeln!(f, "{text}");
+                    let _ = f.flush();
+                }
+                None => println!("{text}"),
+            }
             0
         }
         Err(e) => {
@@ -338,7 +349,14 @@ pub fn run_cli(argv: &[String]) -> i32 {
             if let Some(d) = e.details {
                 error["details"] = json!(d);
             }
-            eprintln!("{}", serde_json::to_string(&json!({ "schemaVersion": SCHEMA_VERSION, "error": error })).unwrap_or_default());
+            let text = serde_json::to_string(&json!({ "schemaVersion": SCHEMA_VERSION, "error": error })).unwrap_or_default();
+            match err {
+                Some(f) => {
+                    let _ = writeln!(f, "{text}");
+                    let _ = f.flush();
+                }
+                None => eprintln!("{text}"),
+            }
             e.exit_code
         }
     }

@@ -93,31 +93,34 @@ fn ensure_aumid_registered(identifier: &str) {
     }
 }
 
-/// CLI 模式控制台附着：windows_subsystem="windows" 的 release exe 无控制台，
-/// AttachConsole(ATTACH_PARENT_PROCESS) 挂到调用方终端，再把 CONOUT$/
-/// CONERR$ 设回进程 std 句柄，println!/eprintln! 才有去处。cmd/PowerShell
-/// 直接调用可见。管道重定向（AI 子进程捕获 stdout）时 AttachConsole 失败
-/// 属预期——句柄已由父进程提供，直接写即可。
+/// CLI 模式输出绑定：windows_subsystem="windows" 的 release exe 不附控制台，
+/// 进程往往没有可用的 stdout/stderr 句柄（管道重定向实测也拿不到——println!
+/// 静默落空）。方案：按优先级解析真实输出目标——
+///   1. GetStdHandle 拿到的父进程管道句柄（重定向场景）
+///   2. AttachConsole(父进程) 后的 CONOUT$（终端直调场景）
+/// 返回 (stdout, stderr) 显式写入器，run_cli 不再依赖 std 缓存句柄。
 #[cfg(target_os = "windows")]
-fn attach_console_for_cli() {
-    use std::os::windows::io::AsRawHandle;
+fn cli_stdio() -> (Option<std::fs::File>, Option<std::fs::File>) {
+    use std::os::windows::io::FromRawHandle;
     const ATTACH_PARENT_PROCESS: u32 = u32::MAX;
     unsafe {
+        let raw_out = windows_sys::Win32::System::Console::GetStdHandle(windows_sys::Win32::System::Console::STD_OUTPUT_HANDLE);
+        let raw_err = windows_sys::Win32::System::Console::GetStdHandle(windows_sys::Win32::System::Console::STD_ERROR_HANDLE);
+        // 句柄有效（非 NULL/-1）→ 父进程给了管道/文件，直接用
+        let valid = |h: *mut core::ffi::c_void| !h.is_null() && h as isize != -1;
+        if valid(raw_out) || valid(raw_err) {
+            let out = valid(raw_out).then(|| std::fs::File::from_raw_handle(raw_out));
+            let err = valid(raw_err).then(|| std::fs::File::from_raw_handle(raw_err));
+            return (out, err);
+        }
+        // 终端直调：附着父进程控制台写 CONOUT$
         if windows_sys::Win32::System::Console::AttachConsole(ATTACH_PARENT_PROCESS) != 0 {
-            if let Ok(out) = std::fs::OpenOptions::new().write(true).open("CONOUT$") {
-                windows_sys::Win32::System::Console::SetStdHandle(
-                    windows_sys::Win32::System::Console::STD_OUTPUT_HANDLE,
-                    out.as_raw_handle(),
-                );
-            }
-            if let Ok(err) = std::fs::OpenOptions::new().write(true).open("CONOUT$") {
-                windows_sys::Win32::System::Console::SetStdHandle(
-                    windows_sys::Win32::System::Console::STD_ERROR_HANDLE,
-                    err.as_raw_handle(),
-                );
-            }
-            // Rust std 在首次使用时才惰性获取句柄：SetStdHandle 发生在任何
-            // println! 之前即生效（main 里 CLI 分支最早执行，满足此前提）
+            let out = std::fs::OpenOptions::new().write(true).open("CONOUT$").ok();
+            // stderr 也走 CONOUT$（CLI 错误信封与 stdout 同面板展示，够用）
+            let err = std::fs::OpenOptions::new().write(true).open("CONOUT$").ok();
+            (out, err)
+        } else {
+            (None, None)
         }
     }
 }
@@ -127,11 +130,13 @@ fn main() {
     // 不初始化 WebView/托盘，直接处理命令后退出——AI 能力封装进应用本体。
     let argv: Vec<String> = std::env::args().skip(1).collect();
     if argv.first().map(String::as_str) == Some("taskctl") {
-        // windows_subsystem="windows" 下 release 无控制台：附着父进程控制台
-        // 并重绑 stdio，否则终端/管道收不到输出
+        // windows_subsystem="windows" 下 release 无控制台：显式解析输出句柄
+        // （父进程管道 > AttachConsole 的 CONOUT$），run_cli 用它写输出
         #[cfg(target_os = "windows")]
-        attach_console_for_cli();
-        std::process::exit(taskctl::run_cli(&argv[1..]));
+        let (mut out, mut err) = cli_stdio();
+        #[cfg(not(target_os = "windows"))]
+        let (mut out, mut err): (Option<std::fs::File>, Option<std::fs::File>) = (None, None);
+        std::process::exit(taskctl::run_cli(&argv[1..], out.as_mut(), err.as_mut()));
     }
 
     let app = tauri::Builder::default()

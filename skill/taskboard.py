@@ -211,19 +211,64 @@ def stop(args, root: Path, remove_runtime=False, purge=False, purge_data=False) 
     return 0
 
 
+def resolve_taskctl_exe(args, root: Path) -> Path | None:
+    """解析挂件 exe（v0.4.0 起自带 CLI 双模式：exe taskctl ... 直连 SQLite，
+    无 Node 依赖）。与挂件启动共用同一解析口径，外加 debug 构建回退。"""
+    exe = resolve_widget_exe(args, root)
+    if exe and exe.is_file():
+        return exe
+    widget_dir = resolve_widget_dir(args, root)
+    if widget_dir:
+        for profile in ("release", "debug"):
+            candidate = widget_dir / "src-tauri" / "target" / profile / WIDGET_EXE_NAME
+            if candidate.is_file():
+                return candidate
+    return None
+
+
 def taskctl(args, root: Path) -> int:
-    """本地模式：直连 SQLite（cli/taskctl-local.mjs），不依赖任何 HTTP 服务。"""
-    version = node_version()
-    if version is None or version < MIN_NODE:
-        emit({"ok": False, "error": "需要 Node.js 22.5+（node:sqlite）。"}, args.json)
-        return 2
-    script = root / "cli" / "taskctl-local.mjs"
-    if not script.is_file():
-        emit({"ok": False, "error": f"未找到 {script}"}, args.json)
-        return 2
+    """本地模式：直连 SQLite，不依赖任何 HTTP 服务。
+
+    v0.4.0 起优先走挂件 exe 的 CLI 双模式（Rust 实现与挂件同库同语义，
+    零 Node 依赖）；exe 未构建时回退 Node 脚本（cli/taskctl-local.mjs，
+    需 Node 22.5+）。两者输出契约一致（schemaVersion:2 JSON + 退出码）。
+    """
+    exe = resolve_taskctl_exe(args, root)
+    if exe is None:
+        # 回退链：Node 脚本（契约基准实现）
+        version = node_version()
+        if version is None or version < MIN_NODE:
+            emit(
+                {
+                    "ok": False,
+                    "error": "未找到挂件 exe（请先构建），且无 Node.js 22.5+ 可回退。",
+                },
+                args.json,
+            )
+            return 2
+        script = root / "cli" / "taskctl-local.mjs"
+        if not script.is_file():
+            emit({"ok": False, "error": f"未找到 {script}"}, args.json)
+            return 2
+        env = os.environ.copy()
+        env.setdefault("VIBE_TASKDECK_DATA_DIR", str(data_dir(root)))
+        result = subprocess.run(
+            ["node", str(script), *args.taskctl_args], cwd=str(root), env=env, text=True,
+            encoding="utf-8", errors="replace",
+        )
+        return result.returncode
     env = os.environ.copy()
     env.setdefault("VIBE_TASKDECK_DATA_DIR", str(data_dir(root)))
-    result = subprocess.run(["node", str(script), *args.taskctl_args], cwd=str(root), env=env, text=True)
+    # 显式管道转发：GUI 子系统（windows_subsystem="windows"）的 exe 在
+    # 句柄继承模式下 stdout 会静默丢失（实测）；capture 后转发彻底绕开。
+    result = subprocess.run(
+        [str(exe), "taskctl", *args.taskctl_args], cwd=str(root), env=env,
+        capture_output=True, timeout=60,
+    )
+    sys.stdout.buffer.write(result.stdout)
+    sys.stdout.buffer.flush()
+    sys.stderr.buffer.write(result.stderr)
+    sys.stderr.buffer.flush()
     return result.returncode
 
 
