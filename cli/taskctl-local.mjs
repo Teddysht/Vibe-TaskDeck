@@ -13,13 +13,13 @@
  * （taskboard.py 会显式设置该变量指向 <repo>/.data，与挂件同库互通）
  *
  * 支持子集：project list/create、issue list/get/create/update/move/archive/restore、
- * comment list/add/update/delete、activity list、context current。
- * 不支持（纯客户端模式无 server）：cloud、project map、issue relation、attachment
- * （relation/attachment 可经挂件全版看板详情面板操作）。
+ * comment list/add/update/delete、attachment upload/download、activity list、context current。
+ * 不支持（纯客户端模式无 server）：cloud、project map、issue relation
+ * （relation 可经挂件全版看板详情面板操作）。
  */
 
-import { realpathSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -103,6 +103,9 @@ const COMMAND_OPTIONS = new Map([
   ["comment add", new Set(["body", "thread-id", "json"])],
   ["comment update", new Set(["body", "thread-id", "if-version", "json"])],
   ["comment delete", new Set(["thread-id", "if-version", "json"])],
+  // 与上游 COMMAND_OPTIONS 逐字相同（attachment download/upload）
+  ["attachment download", new Set(["output", "json"])],
+  ["attachment upload", new Set(["file", "task", "comment", "content-type", "json"])],
   // AI 回执闭环：读活动流（按会话归属聚合，since-id 为活动 id 游标）
   ["activity list", new Set(["thread-id", "since-id", "json"])],
   ["context current", new Set(["cwd", "json"])],
@@ -115,8 +118,6 @@ const UNSUPPORTED_COMMANDS = new Set([
   "cloud status",
   "cloud logout",
   "issue relation",
-  "attachment download",
-  "attachment upload",
 ]);
 
 /* ==== agent 身份解析（多 AI 区分）====
@@ -245,7 +246,7 @@ function execute(parsed, overrides) {
   const allowedOptions = COMMAND_OPTIONS.get(command);
   if (!allowedOptions) {
     throw usageError(
-      "Expected one of: project list/create, issue list/get/create/update/move/archive/restore, comment list/add/update/delete, activity list, context current",
+      "Expected one of: project list/create, issue list/get/create/update/move/archive/restore, comment list/add/update/delete, attachment download/upload, activity list, context current",
     );
   }
   validateOptions(parsed.options, allowedOptions);
@@ -293,6 +294,12 @@ function execute(parsed, overrides) {
       case "comment delete":
         expectOperandCount(parsed, 1);
         return commentDelete(db, parsed.operands[0], parsed.options, overrides);
+      case "attachment download":
+        expectOperandCount(parsed, 1);
+        return attachmentDownload(db, parsed.operands[0], parsed.options, overrides);
+      case "attachment upload":
+        expectOperandCount(parsed, 0);
+        return attachmentUpload(db, parsed.options, overrides);
       case "activity list":
         expectOperandCount(parsed, 0);
         return activityList(db, parsed.options);
@@ -312,19 +319,32 @@ function execute(parsed, overrides) {
 // ============================================================
 
 function resolveDbFile(overrides) {
+  return path.join(resolveDataDir(overrides), "taskboard.sqlite");
+}
+
+/**
+ * 数据目录定位：VIBE_TASKDECK_DATA_DIR > %APPDATA%\Vibe-TaskDeck
+ * （对齐 db.rs #attachments_dir 的兜底链；DB 与附件同根，挂件/CLI 写读互通）
+ */
+function resolveDataDir(overrides) {
   const env = overrides.env ?? process.env;
   const configured = env.VIBE_TASKDECK_DATA_DIR?.trim();
   if (configured) {
-    return path.resolve(configured, "taskboard.sqlite");
+    return path.resolve(configured);
   }
   const appdata = env.APPDATA?.trim();
   if (appdata) {
-    return path.resolve(appdata, "Vibe-TaskDeck", "taskboard.sqlite");
+    return path.resolve(appdata, "Vibe-TaskDeck");
   }
   throw new TaskctlError(
     "Cannot locate the taskboard data directory. Set VIBE_TASKDECK_DATA_DIR.",
     { code: "SERVICE_UNAVAILABLE", exitCode: 3 },
   );
+}
+
+/** 附件目录：<数据目录>/attachments（与 db.rs #attachments_dir 同位，磁盘文件名 = UUID） */
+function resolveAttachmentsDir(overrides) {
+  return path.join(resolveDataDir(overrides), "attachments");
 }
 
 // ============================================================
@@ -518,6 +538,168 @@ function commentDelete(db, commentId, options, overrides) {
   db.deleteComment(requireCommentId(commentId), version);
   // 对齐 HTTP 204 空响应：taskctl 原样输出仅含 schemaVersion 的 JSON
   return {};
+}
+
+// ============================================================
+// 附件（写语义对齐 widget/src-tauri/src/db.rs：内容存磁盘 UUID 文件、
+// DB 只存元数据；上限 10MB 以挂件为准——同库写方必须一致，上游 server 25MiB 不适用于本地）
+// ============================================================
+
+const ATTACHMENT_MAX_BYTES = 10 * 1024 * 1024;
+const ATTACHMENT_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** 附件 id 校验：口径逐字对齐 db.rs #sanitize_attachment_id（36 位 UUID 布局、拒 ".."） */
+function isAttachmentId(id) {
+  return (
+    typeof id === "string"
+    && id.length === 36
+    && !id.includes("..")
+    && ATTACHMENT_ID_PATTERN.test(id)
+  );
+}
+
+function attachmentUpload(db, options, overrides) {
+  const taskId = options.task;
+  const commentId = options.comment;
+  if (Boolean(taskId) === Boolean(commentId)) {
+    throw usageError("attachment upload requires exactly one of --task or --comment");
+  }
+
+  const filePath = resolveInputPath(requiredOption(options, "file"), overrides);
+  let bytes;
+  try {
+    bytes = readFileSync(filePath);
+  } catch (error) {
+    throw new TaskctlError(`Cannot read attachment file: ${filePath}`, {
+      code: "FILE_READ_FAILED",
+      exitCode: 2,
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const filename = path.basename(filePath);
+  if (!filename || filename === "." || filename === "..") {
+    throw usageError("Attachment --file must include a valid filename");
+  }
+
+  let contentType;
+  if (options["content-type"] !== undefined) {
+    contentType = String(options["content-type"]).trim().toLowerCase();
+    if (!contentType) {
+      throw usageError("--content-type cannot be empty");
+    }
+  } else {
+    contentType = guessContentType(filename);
+  }
+
+  // 目标存在性前置校验（对齐 db.rs #upload_attachment 先查任务；避免先写盘后失败留孤儿文件）
+  if (taskId !== undefined) {
+    if (!db.getTask(taskId)) {
+      throw apiError(404, "TASK_NOT_FOUND", `Task '${taskId}' does not exist`);
+    }
+  } else if (!db.getComment(commentId)) {
+    throw apiError(404, "COMMENT_NOT_FOUND", `Comment '${commentId}' does not exist`);
+  }
+
+  if (bytes.length > ATTACHMENT_MAX_BYTES) {
+    throw apiError(400, "ATTACHMENT_TOO_LARGE", "Attachment cannot exceed 10MB");
+  }
+
+  // 先写盘（UUID 文件名）后入库，顺序对齐 db.rs #upload_attachment
+  const id = randomUUID();
+  const dir = resolveAttachmentsDir(overrides);
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, id), bytes);
+  } catch (error) {
+    throw new TaskctlError(`Cannot write attachment file: ${path.join(dir, id)}`, {
+      code: "FILE_WRITE_FAILED",
+      exitCode: 2,
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+
+  const attachment = db.createAttachment({
+    id,
+    taskId: taskId ?? null,
+    commentId: commentId ?? null,
+    filename,
+    contentType,
+    size: bytes.length,
+  });
+  return {
+    attachment,
+    file: filePath,
+    target: taskId !== undefined
+      ? { type: "task", id: taskId }
+      : { type: "comment", id: commentId },
+  };
+}
+
+function attachmentDownload(db, attachmentId, options, overrides) {
+  if (!isAttachmentId(attachmentId)) {
+    throw apiError(400, "INVALID_FIELD", `Invalid attachment id: ${attachmentId}`);
+  }
+  const attachment = db.getAttachment(attachmentId);
+  if (!attachment) {
+    throw apiError(404, "ATTACHMENT_NOT_FOUND", `Attachment '${attachmentId}' does not exist`);
+  }
+
+  const dir = resolveAttachmentsDir(overrides);
+  let bytes;
+  try {
+    bytes = readFileSync(path.join(dir, attachmentId));
+  } catch {
+    // DB 行在而磁盘文件缺失：对齐 db.rs #read_attachment 的 ATTACHMENT_NOT_FOUND
+    throw apiError(404, "ATTACHMENT_NOT_FOUND", `Attachment file missing: ${attachmentId}`);
+  }
+
+  const output = resolveInputPath(requiredOption(options, "output"), overrides);
+  try {
+    writeFileSync(output, bytes);
+  } catch (error) {
+    throw new TaskctlError(`Cannot write attachment file: ${output}`, {
+      code: "FILE_WRITE_FAILED",
+      exitCode: 2,
+      details: error instanceof Error ? error.message : String(error),
+    });
+  }
+  return {
+    attachmentId,
+    output,
+    contentType: attachment.contentType,
+    size: bytes.length,
+  };
+}
+
+/** 扩展名 → Content-Type 映射（移植上游 taskctl.mjs #guessContentType，含默认值） */
+function guessContentType(filename) {
+  switch (path.extname(filename).toLowerCase()) {
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    case ".svg":
+      return "image/svg+xml";
+    case ".md":
+      return "text/markdown";
+    case ".txt":
+      return "text/plain";
+    case ".json":
+      return "application/json";
+    case ".pdf":
+      return "application/pdf";
+    case ".html":
+    case ".htm":
+      return "text/html";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 function currentContext(db, options, overrides) {
