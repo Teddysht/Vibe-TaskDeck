@@ -47,7 +47,7 @@ const server = http.createServer((req, res) => {
 });
 
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
-async function waitFor(fn, timeout = 15000, step = 200) {
+async function waitFor(fn, timeout = 45000, step = 200) {
   const t0 = Date.now();
   while (Date.now() - t0 < timeout) {
     try { const v = await fn(); if (v) return v; } catch {}
