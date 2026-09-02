@@ -105,7 +105,7 @@ python skill/taskboard.py widget
 - **改错了**：全版看板里按 `Ctrl+Z` 撤销。
 - **搜任务**：全版看板里按 `/` 直接跳到搜索框。
 - **换深浅色**：面板右上角有主题切换按钮。
-- **数据在哪**：`TaskDeck/.data/taskboard.sqlite`——一个文件就是全部数据，备份它就是备份所有任务。
+- **数据在哪**：`TaskDeck/.data/taskboard.sqlite`——一个文件就是全部数据，备份它就是备份所有任务（装版独立运行时在 `%APPDATA%\Vibe-TaskDeck`，见下方「从仓库版迁移到安装版」）。
 
 ## 让 AI 帮你管任务
 
@@ -131,6 +131,34 @@ AI 会通过 `taskctl` 命令建任务、认领、推进、评审——每一步
 | `clean --purge-data` | **连任务数据一起删**（会先停挂件，不可逆） |
 
 </details>
+
+## 从仓库版迁移到安装版
+
+安装包（`taskdeck-widget_x.y.z_x64-setup.exe`）安装的挂件**独立运行**（不经 `skill/taskboard.py` 启动），数据默认在 `%APPDATA%\Vibe-TaskDeck`；而仓库开发模式的数据在 `TaskDeck/.data`——两个位置，装版首次打开会是一个**空库**，旧数据没有丢，只是位置不同。两种迁移方式任选：
+
+**方式一：整库拷贝（推荐，简单直接）**
+
+```powershell
+# 1. 退出挂件（托盘右键 → 退出）
+# 2. 整库 + 附件目录一起拷过去
+Copy-Item "D:\your\path\TaskDeck\.data\taskboard.sqlite*" "$env:APPDATA\Vibe-TaskDeck\" -Force
+Copy-Item "D:\your\path\TaskDeck\.data\attachments" "$env:APPDATA\Vibe-TaskDeck\" -Recurse -Force
+# 3. 重新打开挂件
+```
+
+> ⚠️ 不要做「选择性迁移」（只挑部分任务 INSERT）——会丢评论、活动流，且附件存在磁盘 `attachments/` 目录里，漏拷即断链。新库是空的，整库拷贝零风险。
+
+**方式二：config.json 指回旧位置（v0.5.1+，不动数据）**
+
+新建 `%APPDATA%\Vibe-TaskDeck\config.json`，写一行：
+
+```json
+{ "dataDir": "D:/your/path/TaskDeck/.data" }
+```
+
+挂件与 taskctl（exe 双模式）都会读这个 `dataDir`，数据原地不动。优先级：环境变量 `VIBE_TASKDECK_DATA_DIR` > config.json `dataDir` > 默认位置。
+
+> v0.5.1 起，安装版首次运行在默认位置建空库时会弹系统通知提示数据目录位置与本迁移方法。
 
 ## 常见问题
 

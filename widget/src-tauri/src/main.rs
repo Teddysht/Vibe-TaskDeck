@@ -193,11 +193,28 @@ fn main() {
             #[cfg(target_os = "windows")]
             ensure_aumid_registered(&app.config().identifier);
 
+            // 首跑引导判定须先于 open_database（db 文件一旦创建即非首跑）：
+            // 默认位置将新建空库（无 env / 无 config dataDir）时弹 toast 指引
+            // 迁移——装版用户从仓库版切换时数据「消失」实为位置口径不同
+            let fresh_hint = db::fresh_default_db_hint();
+
             // 纯客户端数据层：直连 SQLite（与 taskctl-local / server 模式共享同一库）
             let conn = db::open_database()?;
             app.manage(db::Db(std::sync::Mutex::new(conn)));
             app.manage(MoveClamp::default());
             app.manage(NotifyBaseline::default());
+
+            // 首跑迁移指引 toast（仅提示，无点击路由）：show() 内含 10ms
+            // sleep，跑在独立线程不阻塞 setup
+            if let Some(text) = fresh_hint {
+                let app_id = app.config().identifier.clone();
+                std::thread::spawn(move || {
+                    let _ = tauri_winrt_notification::Toast::new(&app_id)
+                        .title("Vibe-TaskDeck 首次运行")
+                        .text2(&text)
+                        .show();
+                });
+            }
 
             // ---- 系统托盘：常驻入口（左键唤回挂件；右键菜单）----
             let show = MenuItem::with_id(app, "show", "显示挂件", true, None::<&str>)?;

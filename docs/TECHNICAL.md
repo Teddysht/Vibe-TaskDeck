@@ -182,7 +182,7 @@ cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
 
 | 变量 | 说明 | 默认 |
 | --- | --- | --- |
-| `VIBE_TASKDECK_DATA_DIR` | 任务数据库目录 | `<repo>/.data`（挂件独立运行时 `%APPDATA%\Vibe-TaskDeck`） |
+| `VIBE_TASKDECK_DATA_DIR` | 任务数据库目录 | `<repo>/.data`（独立运行：env > `%APPDATA%\Vibe-TaskDeck\config.json` dataDir > `%APPDATA%\Vibe-TaskDeck`） |
 | `VIBE_TASKDECK_RUNTIME_DIR` | 挂件 PID/状态运行目录（含 thread-id.json） | `<repo>/.tmpfiles/Vibe-TaskDeck` |
 | `VIBE_TASKDECK_WIDGET_DIR` / `VIBE_TASKDECK_WIDGET_EXE` | 挂件源码目录 / 可执行文件路径 | `widget/` 自动探测 |
 | `CODEX_THREAD_ID` / `VIBE_TASKDECK_THREAD_ID` | 写操作会话归属（taskboard.py 自动注入优先级最高层） | 不设（回退 config.json > runtimeDir 持久化生成） |
@@ -190,6 +190,8 @@ cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
 | `WEBVIEW2_CDP_PORT` | WebView2 CDP 调试端口（端到端测试用） | 不设 |
 
 另：`skill/config.json`（安装态可选配置，样例 `config.example.json`）——`widgetExe` / `widgetDir` / `dataDir` / `runtimeDir` / `threadId`，优先级 命令行参数 > 环境变量 > config.json > 默认值。
+
+独立运行配置（v0.5.1）：`%APPDATA%\Vibe-TaskDeck\config.json` 的 `dataDir` 键——安装版 exe（挂件 GUI 与 taskctl CLI 双模式）把数据指回任意位置的入口，与 `VIBE_TASKDECK_DATA_DIR` 同语义；解析优先级 环境变量 > config.json > 默认位置。db 路径 / 附件目录 / sync 游标 / 删除附件清理**共用同一三段解析**（`db.rs::resolve_data_dir`），不会再出现口径分裂。首跑（默认位置将新建空库且无 env/无 config）时 GUI 弹 toast 迁移指引（`db.rs::fresh_default_db_hint`，仅 GUI 分支，CLI 契约不受影响）。
 
 ## exe 双模式 CLI（v0.4.0；v0.5.0 命令层扩展）
 

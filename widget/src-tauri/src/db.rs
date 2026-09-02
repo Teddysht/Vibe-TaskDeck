@@ -99,22 +99,86 @@ pub fn open_database() -> Result<Connection, String> {
     Ok(conn)
 }
 
-/// 数据库路径：VIBE_TASKDECK_DATA_DIR > %APPDATA%\Vibe-TaskDeck
-/// （与 cli/taskctl-local.mjs、upstream server 的解析规则保持一致，三方同库）
-fn resolve_db_path() -> Result<PathBuf, String> {
+/// 独立运行配置文件（固定位置，与数据目录解耦）：%APPDATA%\Vibe-TaskDeck\config.json。
+/// 目前认 dataDir 键——安装版用户把数据指回仓库版 .data 或任意位置的入口
+/// （v0.5.1：修「仓库版 → 安装版数据消失」的位置口径分裂）。
+fn app_config_path(appdata: &str) -> PathBuf {
+    PathBuf::from(appdata).join("Vibe-TaskDeck").join("config.json")
+}
+
+/// config.json 文本 → dataDir（缺失/非法/空值静默回退 None）
+fn data_dir_from_config(text: &str) -> Option<PathBuf> {
+    let value: serde_json::Value = serde_json::from_str(text).ok()?;
+    let dir = value.get("dataDir")?.as_str()?.trim();
+    if dir.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(dir))
+    }
+}
+
+/// 数据目录解析（三段）：VIBE_TASKDECK_DATA_DIR > %APPDATA%\Vibe-TaskDeck\
+/// config.json 的 dataDir > %APPDATA%\Vibe-TaskDeck。resolve_db_path /
+/// attachments_dir / cli_data_dir（sync 游标）共用同一解析——任何入口
+/// 改数据位置都全量生效，不再出现口径分裂。
+pub fn resolve_data_dir() -> Result<PathBuf, String> {
     if let Ok(dir) = std::env::var("VIBE_TASKDECK_DATA_DIR") {
         let dir = dir.trim();
         if !dir.is_empty() {
-            return Ok(PathBuf::from(dir).join("taskboard.sqlite"));
+            return Ok(PathBuf::from(dir));
         }
     }
     if let Ok(appdata) = std::env::var("APPDATA") {
         let appdata = appdata.trim();
         if !appdata.is_empty() {
-            return Ok(PathBuf::from(appdata).join("Vibe-TaskDeck").join("taskboard.sqlite"));
+            if let Some(dir) = std::fs::read_to_string(app_config_path(appdata))
+                .ok()
+                .and_then(|text| data_dir_from_config(&text))
+            {
+                return Ok(dir);
+            }
+            return Ok(PathBuf::from(appdata).join("Vibe-TaskDeck"));
         }
     }
     Err("无法定位数据目录：请设置 VIBE_TASKDECK_DATA_DIR 环境变量".into())
+}
+
+/// GUI 首跑引导（main.rs 用）：即将在默认位置新建空库（无 env、无 config
+/// dataDir、db 文件不存在）时返回提示文案。装版用户从仓库版切换时数据
+/// 「消失」的实际原因是位置口径不同（仓库版在 <repo>/.data），toast 指引
+/// 迁移路径。db 文件建好后不再触发（幂等一次性）。
+pub fn fresh_default_db_hint() -> Option<String> {
+    if std::env::var("VIBE_TASKDECK_DATA_DIR")
+        .ok()
+        .map(|s| !s.trim().is_empty())
+        .unwrap_or(false)
+    {
+        return None; // 脚本/开发模式：位置由调用方决定，不打扰
+    }
+    let appdata = std::env::var("APPDATA").ok()?;
+    let appdata = appdata.trim();
+    if appdata.is_empty() {
+        return None;
+    }
+    let default_dir = PathBuf::from(appdata).join("Vibe-TaskDeck");
+    // config.json 已指定 dataDir → 用户明确选过位置，不再提示
+    if let Some(text) = std::fs::read_to_string(default_dir.join("config.json")).ok() {
+        if data_dir_from_config(&text).is_some() {
+            return None;
+        }
+    }
+    if default_dir.join("taskboard.sqlite").exists() {
+        return None; // 非首跑
+    }
+    Some(format!(
+        "数据目录：{}。如从仓库版迁移：退出挂件后，把旧 .data 下的 taskboard.sqlite* 与 attachments 文件夹复制到该目录，再重启即可（详见 README）。",
+        default_dir.display()
+    ))
+}
+
+/// 数据库路径（resolve_data_dir 三段解析 + taskboard.sqlite 文件名）
+fn resolve_db_path() -> Result<PathBuf, String> {
+    Ok(resolve_data_dir()?.join("taskboard.sqlite"))
 }
 
 /// 建表：4 张核心表 + 3 个索引，DDL 逐字对齐 upstream database.mjs #migrate()
@@ -305,22 +369,10 @@ pub fn now_iso_minus(offset_secs: i64) -> String {
     )
 }
 
-/// 数据目录（VIBE_TASKDECK_DATA_DIR > %APPDATA%\Vibe-TaskDeck）。
+/// 数据目录（resolve_data_dir 三段解析）。
 /// taskctl sync 游标文件等 CLI 侧状态文件的落点（与 resolve_db_path 同解析规则）。
 pub fn cli_data_dir() -> Result<std::path::PathBuf, String> {
-    if let Ok(dir) = std::env::var("VIBE_TASKDECK_DATA_DIR") {
-        let dir = dir.trim();
-        if !dir.is_empty() {
-            return Ok(PathBuf::from(dir));
-        }
-    }
-    if let Ok(appdata) = std::env::var("APPDATA") {
-        let appdata = appdata.trim();
-        if !appdata.is_empty() {
-            return Ok(PathBuf::from(appdata).join("Vibe-TaskDeck"));
-        }
-    }
-    Err("无法定位数据目录：请设置 VIBE_TASKDECK_DATA_DIR 环境变量".into())
+    resolve_data_dir()
 }
 
 /// epoch 天数 → 公历年月日（Howard Hinnant civil_from_days 算法）
@@ -1392,17 +1444,11 @@ pub fn delete_task(conn: &Connection, id: &str, version: i64) -> Result<Value, C
     match result {
         Ok(()) => {
             conn.execute_batch("COMMIT")?;
-            // 磁盘附件清理（ENOENT 容忍——上游同语义）
-            if let Some(data_dir) = std::env::var("VIBE_TASKDECK_DATA_DIR").ok().filter(|s| !s.trim().is_empty())
-                .or_else(|| std::env::var("APPDATA").ok()) {
-                let base = if std::env::var("VIBE_TASKDECK_DATA_DIR").ok().filter(|s| !s.trim().is_empty()).is_some() {
-                    std::path::PathBuf::from(data_dir)
-                } else {
-                    std::path::PathBuf::from(data_dir).join("Vibe-TaskDeck")
-                };
+            // 磁盘附件清理（ENOENT 容忍——上游同语义；目录解析走统一三段口径）
+            if let Some(attachments) = attachments_dir() {
                 for attachment_id in &attachment_ids {
                     if let Some(safe) = sanitize_attachment_id(attachment_id) {
-                        let _ = std::fs::remove_file(base.join("attachments").join(safe));
+                        let _ = std::fs::remove_file(attachments.join(safe));
                     }
                 }
             }
@@ -1621,17 +1667,7 @@ pub fn relations_of(conn: &Connection, id: &str) -> Value {
 /// 附件目录（与上游同位：<数据目录>/attachments；构造性安全——只存 UUID 文件名）。
 /// pub(crate) 级：taskctl.rs 的附件上传/下载共用同一目录（挂件/CLI 同根互通）
 pub fn attachments_dir() -> Option<std::path::PathBuf> {
-    let data_dir = std::env::var("VIBE_TASKDECK_DATA_DIR")
-        .ok()
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .map(std::path::PathBuf::from)
-        .or_else(|| {
-            std::env::var("APPDATA")
-                .ok()
-                .map(|d| std::path::PathBuf::from(d).join("Vibe-TaskDeck"))
-        })?;
-    Some(data_dir.join("attachments"))
+    resolve_data_dir().ok().map(|d| d.join("attachments"))
 }
 
 /// 上传附件：元数据入库 + 内容写磁盘（文件名 = UUID，对齐上游）
@@ -2848,6 +2884,21 @@ mod tests {
             "TASK_NOT_FOUND"
         );
         assert!(get_attachment_cli(&conn, "no-such").is_none());
+    }
+
+    #[test]
+    fn data_dir_from_config_parses_datadir() {
+        // 正常解析（trim 生效）
+        assert_eq!(
+            data_dir_from_config(r#"{"dataDir": " D:/td-data " }"#).unwrap(),
+            PathBuf::from("D:/td-data")
+        );
+        // 缺 dataDir / 空值 / 空白 / 非法 JSON / 非字符串 → 静默 None
+        assert!(data_dir_from_config(r#"{"other": 1}"#).is_none());
+        assert!(data_dir_from_config(r#"{"dataDir": ""}"#).is_none());
+        assert!(data_dir_from_config(r#"{"dataDir": "   "}"#).is_none());
+        assert!(data_dir_from_config("not json").is_none());
+        assert!(data_dir_from_config(r#"{"dataDir": 42}"#).is_none());
     }
 
     #[test]

@@ -61,7 +61,7 @@ cd src-tauri; cargo build --release --target x86_64-pc-windows-msvc
 
 ## 数据位置与互通
 
-- 数据库：`VIBE_TASKDECK_DATA_DIR`（taskboard.py 自动设为 `<repo>/.data`）下的 `taskboard.sqlite`；挂件独立运行（不经 taskboard.py）时默认 `%APPDATA%\Vibe-TaskDeck`。
+- 数据库：`VIBE_TASKDECK_DATA_DIR`（taskboard.py 自动设为 `<repo>/.data`）下的 `taskboard.sqlite`；挂件独立运行（不经 taskboard.py，如安装版）时解析顺序为：环境变量 > `%APPDATA%\Vibe-TaskDeck\config.json` 的 `dataDir` > 默认 `%APPDATA%\Vibe-TaskDeck`（v0.5.1）。仓库版 → 安装版的迁移见 README「从仓库版迁移到安装版」。
 - 双端同库：挂件与 taskctl（exe 直连或 Node 回退）都以 WAL + busy_timeout=5000 打开同一文件，可并发读写。
 
 ## 任务状态与优先级
