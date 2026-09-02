@@ -38,6 +38,8 @@
     "core:window:allow-close",
     "notification:default",
     "autostart:default",
-    "allow-broadcast-theme"
+    "allow-broadcast-theme",
+    "allow-detect-agents",
+    "allow-install-skill"
   ]
 }

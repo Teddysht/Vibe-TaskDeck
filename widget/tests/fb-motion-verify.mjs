@@ -47,6 +47,12 @@ window.__TAURI_INTERNALS__ = {
     if (cmd === 'get_app_version') return Promise.resolve('0.2.3');   // 非 string 会崩 React 渲染（version 作为 child）
     if (cmd === 'plugin:autostart|is_enabled') return Promise.resolve(false);
     if (cmd === 'check_update') return Promise.resolve({ tag: 'v0.2.3', name: '', notes: '', url: '', newer: false });
+    // AI 接入（v0.5.2）：claude 已装旧版 / codex 未装；install 就地回包
+    if (cmd === 'detect_agents') return Promise.resolve([
+      { id: 'claude-code', name: 'Claude Code', agentInstalled: true, installed: true, version: '0.5.0' },
+      { id: 'codex', name: 'Codex CLI', agentInstalled: true, installed: false, version: null },
+    ]);
+    if (cmd === 'install_skill') return Promise.resolve({ path: 'mock', updated: args.agent === 'claude-code', version: '0.5.2' });
     return Promise.resolve({});
   },
   transformCallback: () => 0,
@@ -304,6 +310,33 @@ async function main() {
   await sleep(250);
   const dialogGone = await evalJs(`document.querySelector('.fb-dialog-overlay') === null`);
   check('FB-M5d 设置 Dialog 退出后完成卸载', dialogGone === true, `gone=${dialogGone}`);
+
+  // ---- FB-M5e AI 接入组（v0.5.2）：agent 行 + 按钮 + 点击后就地更新状态 ----
+  await evalJs(`document.querySelector('.fb-settingsbtn').click(); 'ok'`);
+  await sleep(300);
+  const agentsInitial = await evalJs(`(() => {
+    const rows = [...document.querySelectorAll('[data-agent-row]')];
+    const btn = (id) => document.querySelector('[data-agent-action="' + id + '"]')?.textContent?.trim();
+    const sub = (id) => document.querySelector('[data-agent-row="' + id + '"] .s')?.textContent?.trim();
+    return { count: rows.length, claudeBtn: btn('claude-code'), codexBtn: btn('codex'),
+             claudeSub: sub('claude-code'), codexSub: sub('codex') };
+  })()`);
+  check('FB-M9a AI 接入组渲染两 agent（已装=更新 / 未装=安装）',
+    agentsInitial.count === 2 && agentsInitial.claudeBtn === '更新' && agentsInitial.codexBtn === '安装'
+      && agentsInitial.claudeSub.includes('v0.5.0'),
+    JSON.stringify(agentsInitial));
+  const afterInstall = await evalJs(`(async () => {
+    document.querySelector('[data-agent-action="codex"]').click();
+    await new Promise(r => setTimeout(r, 200)); // install 就地 setState
+    const sub = document.querySelector('[data-agent-row="codex"] .s')?.textContent?.trim();
+    const btn = document.querySelector('[data-agent-action="codex"]')?.textContent?.trim();
+    return { sub, btn };
+  })()`);
+  check('FB-M9b 点击安装后就地更新为已安装（v0.5.2）',
+    afterInstall.sub.includes('v0.5.2') && afterInstall.btn === '更新',
+    JSON.stringify(afterInstall));
+  await evalJs(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); 'ok'`);
+  await sleep(250);
 
   // 新建 Popover：退出 100ms fb-menu-out
   await evalJs(`(() => { const b = document.querySelector('.fb-newwrap .fb-headerbtn'); b.click(); return 'ok'; })()`);

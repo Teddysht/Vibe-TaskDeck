@@ -117,6 +117,8 @@ AI 会通过 `taskctl` 命令建任务、认领、推进、评审——每一步
 
 完整的 AI 工作流协议（认领 → 推进 → 评审 → 完成）见 [`skill/SKILL.md`](skill/SKILL.md)。
 
+**一键安装（v0.5.2，推荐）**：全版看板 → 设置 → **AI 接入**，自动检测本机的 Claude Code / Codex，点「安装」即可。安装时会自动生成 `config.json` 指向当前挂件 exe 与数据库——AI 装完即用，与挂件操作同一块看板，无需任何手工配置。覆盖安装即更新（skill 协议随挂件版本走）。手工安装：把 `skill/` 目录复制到 `~/.claude/skills/Vibe-TaskDeck/` 或 `~/.codex/skills/Vibe-TaskDeck/`，再参照 `config.example.json` 配置 exe 路径与数据目录。
+
 <details>
 <summary>📖 skill 管理命令速查（点开）</summary>
 

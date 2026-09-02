@@ -193,6 +193,16 @@ cd src-tauri; cargo test              # Rust 单测（db.rs 随函数走）
 
 独立运行配置（v0.5.1）：`%APPDATA%\Vibe-TaskDeck\config.json` 的 `dataDir` 键——安装版 exe（挂件 GUI 与 taskctl CLI 双模式）把数据指回任意位置的入口，与 `VIBE_TASKDECK_DATA_DIR` 同语义；解析优先级 环境变量 > config.json > 默认位置。db 路径 / 附件目录 / sync 游标 / 删除附件清理**共用同一三段解析**（`db.rs::resolve_data_dir`），不会再出现口径分裂。首跑（默认位置将新建空库且无 env/无 config）时 GUI 弹 toast 迁移指引（`db.rs::fresh_default_db_hint`，仅 GUI 分支，CLI 契约不受影响）。
 
+## AI 接入一键安装（v0.5.2）
+
+设置弹窗「AI 接入」组：`detect_agents` 扫描本机 agent（`~/.claude` / `~/.codex` 目录存在性 + 已装 skill 版本），`install_skill` 一键安装到 `<agent>/skills/Vibe-TaskDeck/`。要点（`src/skill_install.rs`）：
+
+- **payload 编译期内嵌**：SKILL.md / taskboard.py / config.example.json 经 `include_str!` 嵌入 exe——独立分发完整，不依赖源码目录；**改 skill 源文件必须重跑 cargo build** 才会进 exe。
+- **自动生成 config.json**（安装即用的关键）：`widgetExe` = current_exe、`dataDir` = resolve_data_dir 三段解析结果、`runtimeDir` = dataDir/runtime、`skillVersion` = CARGO_PKG_VERSION——AI 侧无需任何手工配置，与挂件同库同 exe。
+- 覆盖安装 = 更新（四文件重写，幂等）；agent 未装（根目录不存在）→ 明确错误，前端按钮禁用。
+- 命令注册三处：`main.rs generate_handler!` + `capabilities/default.json` + **`build.rs .commands()`**（第三处最容易漏——build.rs 显式声明才会生成 allow 权限）。
+- 已实测（真实挂件 CDP）：安装后 skill 立即被 Claude Code 识别，任意目录跑 taskboard.py 正确解析 config 并建卡成功。
+
 ## exe 双模式 CLI（v0.4.0；v0.5.0 命令层扩展）
 
 挂件 exe 兼作 taskctl：`argv[1] == "taskctl"` 时不初始化 WebView，走 `src/taskctl.rs` 分支直连 db.rs 后退出。要点：

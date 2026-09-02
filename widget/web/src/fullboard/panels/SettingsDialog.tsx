@@ -1,9 +1,11 @@
 /* ============================================================
  * 设置弹窗 —— 全版看板顶栏齿轮入口，界面居中 Dialog（shadcn 口径）。
- * 分组：通用（开机自启 Switch）· 关于（版本号 + 检查更新）。
+ * 分组：通用（开机自启 Switch）· AI 接入（Claude Code / Codex 一键
+ * 安装 skill，v0.5.2）· 关于（版本号 + 检查更新）。
  * 更新检查：手动按钮 + 启动静默一次；有新版时齿轮挂小圆点徽标
  * （徽标态由父组件 App 持有，经 props 传入 release）。
- * 失败静默原则：网络失败不弹错误 toast（手动点击给出弱提示行）。
+ * 失败静默原则：网络失败不弹错误 toast（手动点击给出弱提示行）；
+ * detect_agents 失败整组不展示（mock 环境无此命令即隐身）。
  * ============================================================ */
 import { useEffect, useRef, useState } from 'react';
 import { invoke } from '../../lib/tauri';
@@ -16,6 +18,15 @@ export interface ReleaseInfo {
   notes: string;
   url: string;
   newer: boolean;
+}
+
+/** 「AI 接入」组：detect_agents 返回的 agent 状态 */
+export interface AgentInfo {
+  id: string;
+  name: string;
+  agentInstalled: boolean;
+  installed: boolean;
+  version: string | null;
 }
 
 type CheckState =
@@ -39,6 +50,8 @@ export default function SettingsDialog({
   const [version, setVersion] = useState('');
   const [autostart, setAutostart] = useState<boolean | null>(null);
   const [check, setCheck] = useState<CheckState>({ kind: 'idle' });
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [installing, setInstalling] = useState<string | null>(null); // agent id
   const dialogRef = useRef<HTMLDivElement>(null);
   // 退出与详情抽屉同语言：closing 120ms 后卸载（overlay + dialog 同步退出）
   const { mounted, closing } = useExitAnimation(open);
@@ -52,6 +65,8 @@ export default function SettingsDialog({
       .catch(() => setAutostart(null));
     if (release?.newer) setCheck({ kind: 'available', release });
     else setCheck({ kind: 'idle' });
+    // AI agent 接入状态（检测失败静默——组不展示，不打扰）
+    invoke<AgentInfo[]>('detect_agents').then(setAgents).catch(() => setAgents([]));
   }, [open, release]);
 
   // Esc 关闭（输入框聚焦时也生效——设置弹窗内没有需要 Esc 退出的编辑态）
@@ -98,6 +113,20 @@ export default function SettingsDialog({
     }
   }
 
+  async function doInstall(agent: AgentInfo) {
+    setInstalling(agent.id);
+    try {
+      const r = await invoke<{ updated: boolean; version: string }>('install_skill', { agent: agent.id });
+      // 就地更新列表状态（无需重新 detect）
+      setAgents((prev) => prev.map((a) => (a.id === agent.id ? { ...a, installed: true, version: r.version } : a)));
+      showToast(r.updated ? `已更新 ${agent.name} 的 skill（v${r.version}）` : `已安装到 ${agent.name}（v${r.version}），AI 重启会话后生效`);
+    } catch (e) {
+      showToast(`安装失败：${String(e)}`, true);
+    } finally {
+      setInstalling(null);
+    }
+  }
+
   if (!mounted) return null;
 
   return (
@@ -138,6 +167,36 @@ export default function SettingsDialog({
               </button>
             </div>
           </div>
+
+          {/* ---- AI 接入 ---- */}
+          {agents.length > 0 && (
+            <div className="fb-set-group">
+              <div className="fb-set-title">AI 接入</div>
+              {agents.map((agent) => (
+                <div className="fb-set-row" key={agent.id} data-agent-row={agent.id}>
+                  <div className="fb-set-label">
+                    <div className="n">{agent.name}</div>
+                    <div className="s">
+                      {!agent.agentInstalled
+                        ? '未检测到该 agent（安装后可用）'
+                        : agent.installed
+                          ? `已安装${agent.version ? ` v${agent.version}` : ''} · 与挂件同库`
+                          : '安装本 skill 到其 skills 目录'}
+                    </div>
+                  </div>
+                  <button
+                    className="fb-set-checkbtn"
+                    disabled={!agent.agentInstalled || installing !== null}
+                    onClick={() => doInstall(agent)}
+                    data-agent-action={agent.id}
+                  >
+                    {installing === agent.id ? '安装中…' : agent.installed ? '更新' : '安装'}
+                  </button>
+                </div>
+              ))}
+              <div className="fb-set-note">安装后 AI 重启会话即可用 taskctl 操作同一块看板；更新会同步最新 skill 协议</div>
+            </div>
+          )}
 
           {/* ---- 关于 ---- */}
           <div className="fb-set-group">

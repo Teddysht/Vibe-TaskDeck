@@ -55,6 +55,10 @@ def project_root() -> Path:
     兼容两种布局：
       · 开发布局 <repo>/skill/taskboard.py → 仓库根（含 .git）
       · 安装布局 <工程>/.claude/skills/Vibe-TaskDeck/taskboard.py → 工程根
+
+    挂件一键安装布局（~/.claude/skills/…，带自动生成的 config.json）时，
+    root 只影响 runtimeDir/dataDir 的默认值——两者均由 config.json 显式
+    指定，home 里偶然存在的 .git 不会造成实际影响。
     """
     current = Path(__file__).resolve().parent
     for parent in [current, *current.parents]:

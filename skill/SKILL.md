@@ -11,24 +11,27 @@ description: 本地试用 Vibe-TaskDeck 任务看板（纯客户端）。用于�
 
 ## 快速使用
 
-在仓库根目录执行（运行目录可用 `VIBE_TASKDECK_RUNTIME_DIR` 指定）：
+本 skill 有两种布局，命令一律以 **skill 自身目录**（下称 `<skill>`，即 taskboard.py 所在目录）为基准：
+
+- **仓库布局**（开发/试用）：`<repo>/skill/`，在仓库根目录执行；
+- **安装布局**（挂件设置「AI 接入」一键安装，v0.5.2+）：`~/.claude/skills/Vibe-TaskDeck/` 或 `~/.codex/skills/Vibe-TaskDeck/`，同目录有自动生成的 `config.json`（指向挂件 exe 与数据库），任意目录执行均可。
 
 ```powershell
 # 看板操作（taskctl 本地直连 SQLite，无需启动任何服务）
-python skill/taskboard.py taskctl project list
-python skill/taskboard.py taskctl issue list --project local
-python skill/taskboard.py taskctl sync --thread-id my-session   # 冷启动恢复（v0.5.0）
+python <skill>/taskboard.py taskctl project list
+python <skill>/taskboard.py taskctl issue list --project local
+python <skill>/taskboard.py taskctl sync --thread-id my-session   # 冷启动恢复（v0.5.0）
 
-# 桌面挂件（纯客户端：内嵌页面 + 直连 SQLite；需已构建 exe）
-python skill/taskboard.py widget        # 启动
-python skill/taskboard.py widget stop   # 停止
+# 状态（安装布局下 status 可确认 exe/数据目录解析是否正确）
+python <skill>/taskboard.py status
 
-# 状态与清理
-python skill/taskboard.py status
-python skill/taskboard.py clean --keep-data
+# 仓库布局专属：挂件启动与清理
+python <skill>/taskboard.py widget        # 启动
+python <skill>/taskboard.py widget stop   # 停止
+python <skill>/taskboard.py clean --keep-data
 ```
 
-已构建 exe 时也可跳过包装器直调（输出契约完全一致；写命令需显式 `--thread-id` 或设 `CODEX_THREAD_ID`）：
+已构建 exe 时也可跳过包装器直调（输出契约完全一致；写命令需显式 `--thread-id` 或设 `CODEX_THREAD_ID`；安装布局下 exe 路径见 config.json 的 `widgetExe`）：
 
 ```powershell
 widget/src-tauri/target/x86_64-pc-windows-msvc/release/taskdeck-widget.exe taskctl issue list
@@ -38,8 +41,9 @@ widget/src-tauri/target/x86_64-pc-windows-msvc/release/taskdeck-widget.exe taskc
 
 ## 前置条件
 
-- 挂件：需要 Rust 工具链构建 exe（见下）。exe 构建后 taskctl 走 exe 双模式，**无 Node 依赖**。
-- 仅在 exe 未构建、回退 Node 脚本时需要 Node.js `22.5+`（`node:sqlite`）。
+- **仓库布局**：挂件需要 Rust 工具链构建 exe（见下）。exe 构建后 taskctl 走 exe 双模式，**无 Node 依赖**。
+- **安装布局**（一键安装）：挂件 exe 已由安装包装好（config.json 的 `widgetExe` 指向它），无需构建、无需 Node；`widget` / `clean` 子命令不适用（挂件由用户自行启动，数据位置由 config.json 决定）。
+- 仅在 exe 未构建、回退 Node 脚本时需要 Node.js `22.5+`（`node:sqlite`）——安装布局不会走到此路径。
 
 ## 桌面挂件（纯客户端）
 
